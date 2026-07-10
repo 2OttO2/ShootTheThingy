@@ -14,7 +14,7 @@ function App() {
   const lastTime = useRef(0);
 
   const gravity = 0.3;
-  const jumpForce = -8;
+  const jumpForce = -15;
 
   // Cooldown do pulo (em ms)
   const jumpCooldown = useRef(0);
@@ -106,10 +106,12 @@ function App() {
   }, []);
 
   return (
+
     <div className="game">
       <Player drawY={drawY} />
       <Spikes />
     </div>
+
   );
 }
 
