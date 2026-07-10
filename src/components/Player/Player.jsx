@@ -32,7 +32,9 @@ function Player(){
 
   <>
 
-    <div className={styles.player}>
+    <div className={styles.player}
+      style={{ top : `${playerY}px`}}
+      >
     </div>
 
   </>
