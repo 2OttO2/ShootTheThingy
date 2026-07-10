@@ -9,7 +9,7 @@ function Player(){
   const gameLoop = () => {
 
     setSpeed(v => {
-        const novaVelocidade = v + 0.001;
+        const novaVelocidade = v + 0.3;
 
         setPlayerY(y => y + novaVelocidade);
 
