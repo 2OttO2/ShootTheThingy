@@ -1,22 +1,30 @@
-import { useState,useEffect } from "react";
+import { useState,useEffect,useRef } from "react";
 import styles from "./Player.module.css";
 function Player(){
  
   const [playerY,setPlayerY] = useState(250);
   const [speed,setSpeed] = useState(0);
+  const animationRef = useRef();
 
+  const gameLoop = () => {
+
+    setSpeed(v => {
+        const novaVelocidade = v + 0.001;
+
+        setPlayerY(y => y + novaVelocidade);
+
+        return novaVelocidade;
+    });
+
+    animationRef.current = requestAnimationFrame(gameLoop);
+  }
   useEffect(() => {
-    
-    const intervalo = setInterval (() => {
 
-      setSpeed(v => v + 0.5);
+  animationRef.current = requestAnimationFrame(gameLoop);
 
-      setPlayerY(y => y + speed);
+  return () => cancelAnimationFrame(animationRef.current);
 
-    },16);
-    return() => clearInterval(intervalo);
-
-  },[speed]);
+  }, []);
 
   useEffect(() => {
     const pular = (e) =>{
