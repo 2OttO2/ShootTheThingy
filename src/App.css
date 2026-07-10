@@ -1,1 +1,12 @@
+body{
+  margin:0;
+}
 
+.game{
+  position:relative;
+  width:400px;
+  height:600px;
+  overflow:hidden;
+  background:#70c5ce;
+  margin:auto;
+}
