@@ -6,6 +6,7 @@ import "./App.css";
 
 function App() {
   const [drawY, setDrawY] = useState(250);
+  const [spikeX,setSpikeX] = useState(1600);
 
   const playerY = useRef(250);
   const speed = useRef(0);
@@ -23,6 +24,17 @@ function App() {
   const spaceHeld = useRef(false);
 
   const gameLoop = (time) => {
+
+
+    setSpikeX((x) => {
+      const next = x - 4;
+
+        if(next < -150){
+        return 1600;
+      }
+      return next;
+    });
+
     // Primeiro frame
     if (lastTime.current === 0) {
       lastTime.current = time;
@@ -56,8 +68,8 @@ function App() {
       speed.current = 0;
     }
 
-    if (playerY.current > 860) {
-      playerY.current = 860;
+    if (playerY.current > 1200) {
+      playerY.current = 1200;
       speed.current = 0;
     }
 
@@ -109,7 +121,7 @@ function App() {
 
     <div className="game">
       <Player drawY={drawY} />
-      <Spikes />
+      <Spikes x={spikeX} />
     </div>
 
   );

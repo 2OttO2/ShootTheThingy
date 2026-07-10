@@ -1,12 +1,7 @@
-body{
-  margin:0;
-}
+.game {
+    position: relative;
+    width: 98vw;
+    height: 100vh;
 
-.game{
-  position:relative;
-  width:100%;
-  height:600px;
-  overflow:hidden;
-  background:#70c5ce;
-  margin:auto;
+    overflow: hidden;
 }

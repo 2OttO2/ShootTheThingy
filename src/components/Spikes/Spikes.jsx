@@ -1,10 +1,13 @@
 import styles from "./Spikes.module.css";
 
-function Spikes(){
+function Spikes({ x }){
 
   return(
 
-    <div>
+    <div
+    className={styles.spikes}
+    style={{ left: `${x}px`}}
+    >
     </div>
 
   )
