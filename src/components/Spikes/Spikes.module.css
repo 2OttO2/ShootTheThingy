@@ -1,12 +1,23 @@
 
-.spikes{
+.spikesTop{
     position: absolute;
     width: 100px;
     height: 300px;
 
     background: red;
 
-    top: 0;
+    top:0;
     overflow:hidden;
  
+}
+.spikesBottom{
+    position: absolute;
+    width: 100px;
+    height: 300px;
+
+    background: red;
+
+    bottom:0;
+    overflow:hidden;
+
 }

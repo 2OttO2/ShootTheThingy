@@ -6,7 +6,7 @@ import "./App.css";
 
 function App() {
   const [drawY, setDrawY] = useState(250);
-  const [spikeX,setSpikeX] = useState(1600);
+  const [spikeX,setSpikeX] = useState(window.innerWidth + 100);
 
   const playerY = useRef(250);
   const speed = useRef(0);
@@ -29,8 +29,8 @@ function App() {
     setSpikeX((x) => {
       const next = x - 4;
 
-        if(next < -150){
-        return 1600;
+        if(next < -100){
+        return window.innerWidth + 100;
       }
       return next;
     });
@@ -68,8 +68,8 @@ function App() {
       speed.current = 0;
     }
 
-    if (playerY.current > 1200) {
-      playerY.current = 1200;
+    if (playerY.current > 1265) {
+      playerY.current = 1265;
       speed.current = 0;
     }
 
