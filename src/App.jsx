@@ -7,6 +7,10 @@ import "./App.css";
 function App() {
   const [drawY, setDrawY] = useState(250);
   const [spikeX,setSpikeX] = useState(window.innerWidth + 100);
+  const [gapY,setGapY] = useState(400); 
+ 
+  const gapSize = 250;
+ 
 
   const playerY = useRef(250);
   const speed = useRef(0);
@@ -26,11 +30,17 @@ function App() {
   const gameLoop = (time) => {
 
 
+    //LOGICA DO SPIKE
     setSpikeX((x) => {
       const next = x - 4;
 
+
         if(next < -100){
-        return window.innerWidth + 100;
+                
+          setGapY(
+            Math.random() * (window.innerHeight - gapSize - 200) + 100
+        );
+      return window.innerWidth + 100;
       }
       return next;
     });
@@ -68,8 +78,8 @@ function App() {
       speed.current = 0;
     }
 
-    if (playerY.current > 1265) {
-      playerY.current = 1265;
+    if (playerY.current > 1165) {
+      playerY.current = 1165;
       speed.current = 0;
     }
 
@@ -121,7 +131,13 @@ function App() {
 
     <div className="game">
       <Player drawY={drawY} />
-      <Spikes x={spikeX} />
+
+      <Spikes 
+        x={spikeX}
+        gapSize={gapSize}
+        gapY={gapY}
+
+      />
     </div>
 
   );

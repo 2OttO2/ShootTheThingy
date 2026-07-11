@@ -1,25 +1,28 @@
 import styles from "./Spikes.module.css";
 
-function Spikes({ x }){
+function Spikes({ x, gapSize, gapY }) {
 
-  return(
-  
-  <>
+  return (
     <div
-    className={styles.spikesTop}
-    style={{ left: `${x}px`}}
+      className={styles.spikes}
+      style={{ left: `${x}px` }}
     >
+      <div
+        className={styles.spikesTop}
+        style={{
+          height: `${gapY}px`
+        }}
+      />
+
+      <div
+        className={styles.spikesBottom}
+        style={{
+          top: `${gapY + gapSize}px`,
+          height: `${1080 - (gapY + gapSize)}px`
+        }}
+      />
     </div>
-
-    <div
-    className={styles.spikesBottom}
-    style={{ left: `${x}px`}}
-
-    >
-    </div>
-
-  </>
-
-  )
+  );
 }
+
 export default Spikes;
