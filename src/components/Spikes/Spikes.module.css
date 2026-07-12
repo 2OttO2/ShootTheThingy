@@ -3,13 +3,13 @@
 .spikes {
     position: absolute;
     width: 100px;
-    height: 1080px;
+    height: 920px;
 }
 
 .spikesTop {
     position:absolute;
     width: 100px;
-    height: 300px;
+    height: 100px;
     background: red;
     top:0;
 }
@@ -17,7 +17,7 @@
 .spikesBottom {
     position:absolute;
     width: 100px;
-    height: 300px;
+    height: 100px;
     background: red;
     bottom:0;
 }

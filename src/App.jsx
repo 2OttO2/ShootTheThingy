@@ -7,9 +7,7 @@ import "./App.css";
 function App() {
   const [drawY, setDrawY] = useState(250);
   const [spikeX,setSpikeX] = useState(window.innerWidth + 100);
-  const [gapY,setGapY] = useState(400); 
  
-  const gapSize = 250;
  
 
   const playerY = useRef(250);
@@ -31,20 +29,15 @@ function App() {
 
 
     //LOGICA DO SPIKE
-    setSpikeX((x) => {
-      const next = x - 4;
+  setSpikeX((x) => {
+    const next = x - 4;
 
-
-        if(next < -100){
-                
-          setGapY(
-            Math.random() * (window.innerHeight - gapSize - 200) + 100
-        );
+    if (next < -100) {
       return window.innerWidth + 100;
       }
+
       return next;
     });
-
     // Primeiro frame
     if (lastTime.current === 0) {
       lastTime.current = time;
@@ -134,8 +127,6 @@ function App() {
 
       <Spikes 
         x={spikeX}
-        gapSize={gapSize}
-        gapY={gapY}
 
       />
     </div>
