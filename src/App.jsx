@@ -5,14 +5,20 @@ import Spikes from "./components/Spikes/Spikes.jsx";
 import "./App.css";
 
 function App() {
-  const [drawY, setDrawY] = useState(250);
-  const [spike, setSpike] = useState({
-  x: window.innerWidth + 100,
-  side: "bottom",
-  amount: 2,
+  const createSpikes = () => ({
+    top: {
+      x: window.innerWidth + 100,
+      amount: Math.floor(Math.random() * 3) + 2, // 2 a 4
+    },
+    bottom: {
+      x: window.innerWidth + 100,
+      amount: Math.floor(Math.random() * 3) + 2, // 2 a 4
+    },
   });
 
- 
+  const [drawY, setDrawY] = useState(250);
+  const [spikes, setSpikes] = useState(createSpikes);
+
   const spikeSpeed = 4;
 
   const playerY = useRef(250);
@@ -24,52 +30,50 @@ function App() {
   const gravity = 0.3;
   const jumpForce = -15;
 
-  // Cooldown do pulo (em ms)
   const jumpCooldown = useRef(0);
-
-  // Impede vários keydown enquanto segura espaço
   const spaceHeld = useRef(false);
 
   const gameLoop = (time) => {
-
-
-    //LOGICA DO Spikes
-  
-setSpike((prev) => {
-    const nextX = prev.x - spikeSpeed * dt;
-
-    if (nextX < -250) {
-      return {
-        x: window.innerWidth + 100,
-        side: Math.random() < 0.5 ? "top" : "bottom",
-        amount: Math.floor(Math.random() * 3) + 2,
-       };
-     }
-
-      return {
-      ...prev,
-       x: nextX,
-       };
-    });
-     // Primeiro frame
+    // Primeiro frame
     if (lastTime.current === 0) {
       lastTime.current = time;
     }
 
-    // DeltaTime em milissegundos
+    // Delta Time
     const deltaTime = Math.min(time - lastTime.current, 50);
     lastTime.current = time;
 
-    // Escala para manter a física igual em qualquer FPS
+    // Escala para manter a física em qualquer FPS
     const dt = deltaTime / 16.67;
 
-    // Gravidade
-    speed.current += gravity * dt;
+    // ===========================
+    // SPIKES
+    // ===========================
+    setSpikes((prev) => {
+      const nextX = prev.top.x - spikeSpeed * dt;
 
-    // Movimento
+      if (nextX < -250) {
+        return createSpikes();
+      }
+
+      return {
+        top: {
+          ...prev.top,
+          x: nextX,
+        },
+        bottom: {
+          ...prev.bottom,
+          x: nextX,
+        },
+      };
+    });
+
+    // ===========================
+    // PLAYER
+    // ===========================
+    speed.current += gravity * dt;
     playerY.current += speed.current * dt;
 
-    // Atualiza cooldown
     if (jumpCooldown.current > 0) {
       jumpCooldown.current -= deltaTime;
 
@@ -78,7 +82,6 @@ setSpike((prev) => {
       }
     }
 
-    // Limites do player
     if (playerY.current < 0) {
       playerY.current = 0;
       speed.current = 0;
@@ -106,16 +109,14 @@ setSpike((prev) => {
 
       e.preventDefault();
 
-      // Se já está segurando a tecla, ignora
       if (spaceHeld.current) return;
 
       spaceHeld.current = true;
 
-      // Ainda está em cooldown
       if (jumpCooldown.current > 0) return;
 
       speed.current = jumpForce;
-      jumpCooldown.current = 1050; // 250 ms
+      jumpCooldown.current = 1050;
     };
 
     const keyUp = (e) => {
@@ -134,18 +135,21 @@ setSpike((prev) => {
   }, []);
 
   return (
-
     <div className="game">
       <Player drawY={drawY} />
 
-      <Spikes 
-        x={spike.x}
-        side={spike.side}
-        amount={spike.amount}
+      <Spikes
+        x={spikes.top.x}
+        side="top"
+        amount={spikes.top.amount}
+      />
 
+      <Spikes
+        x={spikes.bottom.x}
+        side="bottom"
+        amount={spikes.bottom.amount}
       />
     </div>
-
   );
 }
 

@@ -12,6 +12,7 @@ function Spikes({ x, side, amount }) {
           key={index}
           src={spikeImg}
           className={styles.spike}
+          alt=""
         />
       ))}
     </div>
