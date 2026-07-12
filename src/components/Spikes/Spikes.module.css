@@ -1,23 +1,22 @@
-
-
-.spikes {
-    position: absolute;
-    width: 100px;
-    height: 920px;
+.spikes{
+    position:absolute;
+    display:flex;
+    gap:4px;
 }
 
-.spikesTop {
-    position:absolute;
-    width: 100px;
-    height: 100px;
-    background: red;
+.spikes.bottom{
+    bottom:0;
+}
+
+.spikes.top{
     top:0;
 }
 
-.spikesBottom {
-    position:absolute;
-    width: 100px;
-    height: 100px;
-    background: red;
-    bottom:0;
+.spike{
+    width:50px;
+    height:50px;
+}
+
+.top.spike{
+    transform:rotate(180deg);
 }

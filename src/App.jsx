@@ -6,7 +6,11 @@ import "./App.css";
 
 function App() {
   const [drawY, setDrawY] = useState(250);
-  const [spikeX,setSpikeX] = useState(window.innerWidth + 100);
+  const [spike, setSpike] = useState({
+  x: window.innerWidth + 100,
+  side: "bottom",
+  amount: 2,
+  });
  
  
 
@@ -28,17 +32,24 @@ function App() {
   const gameLoop = (time) => {
 
 
-    //LOGICA DO SPIKE
-  setSpikeX((x) => {
-    const next = x - 4;
+    //LOGICA DO Spikes 
+    setSpike((prev) => {
+      const nextX = prev.x - 4;
 
-    if (next < -100) {
-      return window.innerWidth + 100;
+      if (nextX < -250) {
+        return {
+          x: window.innerWidth + 100,
+          side: Math.random() < 0.5 ? "top" : "bottom",
+          amount: Math.floor(Math.random() * 3) + 2, // 2~4
+        };
       }
 
-      return next;
+      return {
+        ...prev,
+        x: nextX,
+      };
     });
-    // Primeiro frame
+     // Primeiro frame
     if (lastTime.current === 0) {
       lastTime.current = time;
     }
@@ -126,7 +137,9 @@ function App() {
       <Player drawY={drawY} />
 
       <Spikes 
-        x={spikeX}
+        x={spike.x}
+        side={spike.side}
+        amount={spike.amount}
 
       />
     </div>
