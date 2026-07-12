@@ -11,8 +11,9 @@ function App() {
   side: "bottom",
   amount: 2,
   });
+
  
- 
+  const spikeSpeed = 4;
 
   const playerY = useRef(250);
   const speed = useRef(0);
@@ -32,22 +33,23 @@ function App() {
   const gameLoop = (time) => {
 
 
-    //LOGICA DO Spikes 
-    setSpike((prev) => {
-      const nextX = prev.x - 4;
+    //LOGICA DO Spikes
+  
+setSpike((prev) => {
+    const nextX = prev.x - spikeSpeed * dt;
 
-      if (nextX < -250) {
-        return {
-          x: window.innerWidth + 100,
-          side: Math.random() < 0.5 ? "top" : "bottom",
-          amount: Math.floor(Math.random() * 3) + 2, // 2~4
-        };
-      }
+    if (nextX < -250) {
+      return {
+        x: window.innerWidth + 100,
+        side: Math.random() < 0.5 ? "top" : "bottom",
+        amount: Math.floor(Math.random() * 3) + 2,
+       };
+     }
 
       return {
-        ...prev,
-        x: nextX,
-      };
+      ...prev,
+       x: nextX,
+       };
     });
      // Primeiro frame
     if (lastTime.current === 0) {

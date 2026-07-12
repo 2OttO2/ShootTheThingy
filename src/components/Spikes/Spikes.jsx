@@ -4,7 +4,7 @@ import spikeImg from "../../assets/spike.png";
 function Spikes({ x, side, amount }) {
   return (
     <div
-      className={`styles.spikes ${side}`}
+      className={`${styles.spikes} ${styles[side]}`}
       style={{ left: `${x}px` }}
     >
       {Array.from({ length: amount }).map((_, index) => (
