@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import Player from "./components/Player/Player.jsx";
 import Spikes from "./components/Spikes/Spikes.jsx";
+import Teto from "./components/Teto/Teto.jsx";
+import Ground from "./components/Ground/Ground.jsx";
 
 import "./App.css";
 
@@ -136,6 +138,9 @@ function App() {
 
   return (
     <div className="game">
+
+      <Teto/>
+
       <Player drawY={drawY} />
 
       <Spikes
@@ -149,6 +154,9 @@ function App() {
         side="bottom"
         amount={spikes.bottom.amount}
       />
+
+      <Ground/>
+
     </div>
   );
 }

@@ -1,8 +1,8 @@
-.ground{
+.teto{
   display:flex;
   position:absolute;
   background-color:black;
+  height:5px;
   width:1000vh;
-  height:100px;
-  bottom:75px;
+  top:0;
 }
