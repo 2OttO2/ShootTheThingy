@@ -142,7 +142,6 @@ function App() {
 
       speed.current = jumpForce;
       jumpCooldown.current = 1050;
-        console.log(gameSpeed.current.toFixed(2));
         gameSpeed.current = Math.min( gameSpeed.current + 0.05, maxGameSpeed);
     };
 
