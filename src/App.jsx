@@ -22,6 +22,12 @@ function App() {
   const [drawY, setDrawY] = useState(250);
   const [spikes, setSpikes] = useState(createSpikes);
 
+  //gameSpeed
+
+  const gameSpeed = useRef(1);
+  const maxGameSpeed = 5;
+  const speedBaseSpike = 4;
+
   const spikeSpeed = 4;
 
   const playerY = useRef(250);
@@ -66,7 +72,7 @@ function App() {
     // ===========================
 
     setSpikes((prev) => {
-      const nextX = prev.top.x - spikeSpeed * dt;
+        const nextX = prev.top.x - speedBaseSpike * gameSpeed.current * dt;
 
       if (nextX < -250) {
         return createSpikes();
@@ -136,6 +142,8 @@ function App() {
 
       speed.current = jumpForce;
       jumpCooldown.current = 1050;
+        console.log(gameSpeed.current.toFixed(2));
+        gameSpeed.current = Math.min( gameSpeed.current + 0.05, maxGameSpeed);
     };
 
     const keyUp = (e) => {
