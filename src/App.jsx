@@ -7,14 +7,15 @@ import Ground from "./components/Ground/Ground.jsx";
 import "./App.css";
 
 function App() {
+
   const createSpikes = () => ({
     top: {
       x: window.innerWidth + 100,
-      amount: Math.floor(Math.random() * 3) + 2, // 2 a 4
+      amount: Math.floor(Math.random() * 3) + 2,
     },
     bottom: {
       x: window.innerWidth + 100,
-      amount: Math.floor(Math.random() * 3) + 2, // 2 a 4
+      amount: Math.floor(Math.random() * 3) + 2,
     },
   });
 
@@ -26,31 +27,44 @@ function App() {
   const playerY = useRef(250);
   const speed = useRef(0);
 
-  const animationRef = useRef(null);
-  const lastTime = useRef(0);
-
   const gravity = 0.3;
   const jumpForce = -15;
+  const bounce = 0.8;
 
   const jumpCooldown = useRef(0);
   const spaceHeld = useRef(false);
 
+  const animationRef = useRef(null);
+  const lastTime = useRef(0);
+
+  // ===========================
+  // TAMANHOS
+  // ===========================
+
+  const playerSize = 40;
+
+  //LIMITE DO GROUND E TETO 
+  const TETO_HEIGHT = 305;
+  const GROUND_HEIGHT = -295;
+
+  const teto = TETO_HEIGHT;
+  const floor = window.innerHeight - GROUND_HEIGHT - playerSize;
+
   const gameLoop = (time) => {
-    // Primeiro frame
+
     if (lastTime.current === 0) {
       lastTime.current = time;
     }
 
-    // Delta Time
     const deltaTime = Math.min(time - lastTime.current, 50);
     lastTime.current = time;
 
-    // Escala para manter a física em qualquer FPS
     const dt = deltaTime / 16.67;
 
     // ===========================
     // SPIKES
     // ===========================
+
     setSpikes((prev) => {
       const nextX = prev.top.x - spikeSpeed * dt;
 
@@ -73,8 +87,21 @@ function App() {
     // ===========================
     // PLAYER
     // ===========================
+
     speed.current += gravity * dt;
     playerY.current += speed.current * dt;
+
+    // Bounce no teto
+    if (playerY.current <= teto) {
+      playerY.current = teto;
+      speed.current *= -bounce;
+    }
+
+    // Bounce no chão
+    if (playerY.current >= floor) {
+      playerY.current = floor;
+      speed.current *= -bounce;
+    }
 
     if (jumpCooldown.current > 0) {
       jumpCooldown.current -= deltaTime;
@@ -82,16 +109,6 @@ function App() {
       if (jumpCooldown.current < 0) {
         jumpCooldown.current = 0;
       }
-    }
-
-    if (playerY.current < 0) {
-      playerY.current = 0;
-      speed.current = 0;
-    }
-
-    if (playerY.current > 1165) {
-      playerY.current = 1165;
-      speed.current = 0;
     }
 
     setDrawY(playerY.current);
@@ -138,8 +155,7 @@ function App() {
 
   return (
     <div className="game">
-
-      <Teto/>
+      <Teto />
 
       <Player drawY={drawY} />
 
@@ -155,8 +171,7 @@ function App() {
         amount={spikes.bottom.amount}
       />
 
-      <Ground/>
-
+      <Ground />
     </div>
   );
 }
