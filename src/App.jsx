@@ -24,11 +24,16 @@ function App() {
 
   //gameSpeed
 
-  const gameSpeed = useRef(1);
-  const maxGameSpeed = 5;
-  const speedBaseSpike = 4;
+  const BASE_GAME_SPEED = 1;
+  const MAX_GAME_SPEED = 5;
 
-  const spikeSpeed = 4;
+  const gameSpeed = useRef(BASE_GAME_SPEED);
+  const momentum = useRef(0);
+
+  const MOMENTUM_GAIN = 1.35;
+  const MOMENTUM_DECAY = 0.007;
+
+  const speedBaseSpike = 4;
 
   const playerY = useRef(250);
   const speed = useRef(0);
@@ -56,6 +61,8 @@ function App() {
   const teto = TETO_HEIGHT;
   const floor = window.innerHeight - GROUND_HEIGHT - playerSize;
 
+  // ONDE TUDO ACONTECE
+
   const gameLoop = (time) => {
 
     if (lastTime.current === 0) {
@@ -66,6 +73,15 @@ function App() {
     lastTime.current = time;
 
     const dt = deltaTime / 16.67;
+
+    momentum.current -= MOMENTUM_DECAY * dt;
+      if(momentum.current < 0 ){
+        momentum.current = 0;
+    }
+      gameSpeed.current = Math.min(
+      BASE_GAME_SPEED + momentum.current,
+      MAX_GAME_SPEED
+    );
 
     // ===========================
     // SPIKES
@@ -142,7 +158,11 @@ function App() {
 
       speed.current = jumpForce;
       jumpCooldown.current = 1050;
-        gameSpeed.current = Math.min( gameSpeed.current + 0.05, maxGameSpeed);
+
+      momentum.current = Math.min(
+        momentum.current + MOMENTUM_GAIN,
+        MAX_GAME_SPEED - BASE_GAME_SPEED
+      );
     };
 
     const keyUp = (e) => {
