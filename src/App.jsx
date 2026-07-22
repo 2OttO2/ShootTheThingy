@@ -3,7 +3,7 @@ import Player from "./components/Player/Player.jsx";
 import Spikes from "./components/Spikes/Spikes.jsx";
 import Teto from "./components/Teto/Teto.jsx";
 import Ground from "./components/Ground/Ground.jsx";
-import { isColliding } from "./utils/collision.js";
+import { isPlayerCollidingWithSpike } from "./utils/collision.js";
 
 import "./App.css";
 
@@ -20,8 +20,9 @@ function App() {
     },
   });
 
-  const [drawY, setDrawY] = useState(250);
+  const [drawY, setDrawY] = useState(350);
   const [spikes, setSpikes] = useState(createSpikes);
+  const spikesRef = useRef(spikes);
 
   //gameSpeed
 
@@ -34,9 +35,10 @@ function App() {
   const MOMENTUM_GAIN = 1.35;
   const MOMENTUM_DECAY = 0.005;
 
+  const spikeSize = 64;
   const speedBaseSpike = 4;
 
-  const playerY = useRef(250);
+  const playerY = useRef(350);
   const speed = useRef(0);
 
   const gravity = 0.3;
@@ -56,8 +58,8 @@ function App() {
   const playerSize = 40;
 
   //LIMITE DO GROUND E TETO 
-  const TETO_HEIGHT = 305;
-  const GROUND_HEIGHT = -295;
+  const TETO_HEIGHT = 1;
+  const GROUND_HEIGHT = 0;
 
   const teto = TETO_HEIGHT;
   const floor = window.innerHeight - GROUND_HEIGHT - playerSize;
@@ -75,13 +77,6 @@ function App() {
 
     const dt = deltaTime / 16.67;
 
-    const player = {
-     x: 100,
-     y: playerY.current,
-     width: playerSize,
-     height: playerSize,
-    };
-
     momentum.current -= MOMENTUM_DECAY * dt;
       if(momentum.current < 0 ){
         momentum.current = 0;
@@ -94,25 +89,42 @@ function App() {
     // ===========================
     // SPIKES
     // ===========================
+   setSpikes((prev) => {
 
-    setSpikes((prev) => {
-        const nextX = prev.top.x - speedBaseSpike * gameSpeed.current * dt;
+   const nextX = prev.top.x - speedBaseSpike * gameSpeed.current * dt;
 
-      if (nextX < -250) {
+      if(nextX < -250){
         return createSpikes();
       }
 
-      return {
-        top: {
-          ...prev.top,
-          x: nextX,
-        },
-        bottom: {
+    const next = {
+      top: {
+       ...prev.top,
+        x: nextX,
+      },
+      bottom: {
           ...prev.bottom,
           x: nextX,
         },
       };
+
+     spikesRef.current = next;
+
+     return next;
     });
+    
+   const topSpike = {
+    x:spikesRef.current.bottom.x,
+    y:floor - (spikes.top.amount * spikeSize) + playerSize,
+    width:spikeSize,
+    height:spikes.bottom.amount * spikeSize,
+   };
+   const bottomSpike = {
+     x:spikesRef.current.bottom.x,
+     y:floor - (spikes.bottom.amount * spikeSize) + playerSize,
+     width:spikeSize,
+     height:spikes.bottom.amount * spikeSize,
+   };
 
     // ===========================
     // PLAYER
@@ -120,6 +132,8 @@ function App() {
 
     speed.current += gravity * dt;
     playerY.current += speed.current * dt;
+
+
 
     // Bounce no teto
     if (playerY.current <= teto) {
@@ -140,7 +154,27 @@ function App() {
         jumpCooldown.current = 0;
       }
     }
+    const player = {
+       x: 200,
+       y: playerY.current,
+       width: playerSize,
+       height: playerSize,
+    };
     //COLISAO SNU SNU 
+    if(
+      isPlayerCollidingWithSpike(player,topSpike) ||
+      isPlayerCollidingWithSpike(player,bottomSpike)
+    ){
+      console.log("colidi");
+    }
+//     console.log(
+//   "PLAYER",
+//   player,
+//   "TOP",
+//   topSpike,
+//   "BOTTOM",
+//   bottomSpike
+// );
 
 
     setDrawY(playerY.current);
@@ -167,7 +201,7 @@ function App() {
       if (jumpCooldown.current > 0) return;
 
       speed.current = jumpForce;
-      jumpCooldown.current = 2050;
+      jumpCooldown.current = 1050;
 
       momentum.current = Math.min(
         momentum.current + MOMENTUM_GAIN,
