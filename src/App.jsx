@@ -115,13 +115,13 @@ function App() {
     
    const topSpike = {
     x:spikesRef.current.top.x,
-    y:floor - (spikes.top.amount * spikeSize) + playerSize,
+    y: -65,
     width:spikeSize,
     height:spikes.top.amount * spikeSize,
    };
    const bottomSpike = {
      x:spikesRef.current.bottom.x,
-     y:floor - (spikes.bottom.amount * spikeSize) + playerSize,
+     y: 864,
      width:spikeSize,
      height:spikes.bottom.amount * spikeSize,
    };
@@ -201,7 +201,7 @@ function App() {
       if (jumpCooldown.current > 0) return;
 
       speed.current = jumpForce;
-      jumpCooldown.current = 1050;
+      jumpCooldown.current = 0;
 
       momentum.current = Math.min(
         momentum.current + MOMENTUM_GAIN,
