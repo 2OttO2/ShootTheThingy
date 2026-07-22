@@ -2,7 +2,6 @@
     position: absolute;
     display: flex;
     width:100vh;
-    height:910px;
     z-index: 10;
 }
 

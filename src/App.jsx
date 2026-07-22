@@ -58,8 +58,8 @@ function App() {
   const playerSize = 40;
 
   //LIMITE DO GROUND E TETO 
-  const TETO_HEIGHT = 1;
-  const GROUND_HEIGHT = 0;
+  const TETO_HEIGHT = 300;
+  const GROUND_HEIGHT = -300;
 
   const teto = TETO_HEIGHT;
   const floor = window.innerHeight - GROUND_HEIGHT - playerSize;
@@ -167,14 +167,14 @@ function App() {
     ){
       console.log("colidi");
     }
-//     console.log(
-//   "PLAYER",
-//   player,
-//   "TOP",
-//   topSpike,
-//   "BOTTOM",
-//   bottomSpike
-// );
+// console.log(
+//    "PLAYER",
+//    player,
+//    "TOP",
+//    topSpike,
+//    "BOTTOM",
+//    bottomSpike
+//  );
 
 
     setDrawY(playerY.current);
