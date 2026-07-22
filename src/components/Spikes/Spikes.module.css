@@ -11,8 +11,8 @@
 }
 
 .bottom {
-    top:845px;
     left: 0;
+    bottom:0;
 }
 
 .spike {

@@ -58,8 +58,8 @@ function App() {
   const playerSize = 40;
 
   //LIMITE DO GROUND E TETO 
-  const TETO_HEIGHT = 300;
-  const GROUND_HEIGHT = -300;
+  const TETO_HEIGHT = 0;
+  const GROUND_HEIGHT = 5;
 
   const teto = TETO_HEIGHT;
   const floor = window.innerHeight - GROUND_HEIGHT - playerSize;
@@ -114,10 +114,10 @@ function App() {
     });
     
    const topSpike = {
-    x:spikesRef.current.bottom.x,
+    x:spikesRef.current.top.x,
     y:floor - (spikes.top.amount * spikeSize) + playerSize,
     width:spikeSize,
-    height:spikes.bottom.amount * spikeSize,
+    height:spikes.top.amount * spikeSize,
    };
    const bottomSpike = {
      x:spikesRef.current.bottom.x,
@@ -167,14 +167,14 @@ function App() {
     ){
       console.log("colidi");
     }
-// console.log(
-//    "PLAYER",
-//    player,
-//    "TOP",
-//    topSpike,
-//    "BOTTOM",
-//    bottomSpike
-//  );
+console.log(
+   "PLAYER",
+   player,
+   "TOP",
+   topSpike,
+   "BOTTOM",
+   bottomSpike
+ );
 
 
     setDrawY(playerY.current);
