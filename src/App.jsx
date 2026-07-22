@@ -4,6 +4,7 @@ import Spikes from "./components/Spikes/Spikes.jsx";
 import Teto from "./components/Teto/Teto.jsx";
 import Ground from "./components/Ground/Ground.jsx";
 import { isPlayerCollidingWithSpike } from "./utils/collision.js";
+import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
 
 import "./App.css";
 
@@ -35,11 +36,15 @@ function App() {
   const MOMENTUM_GAIN = 1.35;
   const MOMENTUM_DECAY = 0.005;
 
+  //spikes 
+  
   const spikeSize = 64;
   const speedBaseSpike = 4;
 
+  //player 
   const playerY = useRef(350);
   const speed = useRef(0);
+  const playerSize = 40;
 
   const gravity = 0.3;
   const jumpForce = -15;
@@ -51,11 +56,6 @@ function App() {
   const animationRef = useRef(null);
   const lastTime = useRef(0);
 
-  // ===========================
-  // TAMANHOS
-  // ===========================
-
-  const playerSize = 40;
 
   //LIMITE DO GROUND E TETO 
   const TETO_HEIGHT = 0;
@@ -112,19 +112,30 @@ function App() {
 
      return next;
     });
+   
+    const topHitboxes = createSpikeHitboxes(
+      spikesRef.current.top,
+      "top"
+    );
     
-   const topSpike = {
-    x:spikesRef.current.top.x,
-    y: -65,
-    width:spikeSize,
-    height:spikes.top.amount * spikeSize,
-   };
-   const bottomSpike = {
-     x:spikesRef.current.bottom.x,
-     y: 864,
-     width:spikeSize,
-     height:spikes.bottom.amount * spikeSize,
-   };
+    const bottomHitboxes = createSpikeHitboxes(
+      spikesRef.current.bottom,
+      "bottom"
+    );
+
+    //DELETAR 
+   // const topSpike = {
+   //  x:spikesRef.current.top.x + 6,
+   //  y: -65,
+   //  width:spikeSize,
+   //  height:spikes.top.amount * spikeSize,
+   // };
+   // const bottomSpike = {
+   //   x:spikesRef.current.bottom.x + 6,
+   //   y: 864,
+   //   width:spikeSize,
+   //   height:spikes.bottom.amount * spikeSize,
+   // };
 
     // ===========================
     // PLAYER
@@ -157,15 +168,20 @@ function App() {
     const player = {
        x: 200,
        y: playerY.current,
-       width: playerSize,
-       height: playerSize,
+       width: 25,
+       height: 25,
     };
     //COLISAO SNU SNU 
-    if(
-      isPlayerCollidingWithSpike(player,topSpike) ||
-      isPlayerCollidingWithSpike(player,bottomSpike)
-    ){
-      console.log("colidi " ,player,topSpike,bottomSpike);
+
+    const collided = 
+      topHitboxes.some(hitbox =>
+      isPlayerCollidingWithSpike(player,hitbox)
+    ) ||
+      bottomHitboxes.some(hitbox =>
+      isPlayerCollidingWithSpike(player,hitbox)
+    );
+    if(collided){
+      console.log("colidi papi");
     }
 // console.log(
 //    "PLAYER",
