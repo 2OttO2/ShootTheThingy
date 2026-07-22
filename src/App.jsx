@@ -25,13 +25,13 @@ function App() {
   //gameSpeed
 
   const BASE_GAME_SPEED = 1;
-  const MAX_GAME_SPEED = 5;
+  const MAX_GAME_SPEED = 10;
 
   const gameSpeed = useRef(BASE_GAME_SPEED);
   const momentum = useRef(0);
 
   const MOMENTUM_GAIN = 1.35;
-  const MOMENTUM_DECAY = 0.007;
+  const MOMENTUM_DECAY = 0.005;
 
   const speedBaseSpike = 4;
 
@@ -157,7 +157,7 @@ function App() {
       if (jumpCooldown.current > 0) return;
 
       speed.current = jumpForce;
-      jumpCooldown.current = 1050;
+      jumpCooldown.current = 2050;
 
       momentum.current = Math.min(
         momentum.current + MOMENTUM_GAIN,
