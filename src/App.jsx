@@ -3,6 +3,7 @@ import Player from "./components/Player/Player.jsx";
 import Spikes from "./components/Spikes/Spikes.jsx";
 import Teto from "./components/Teto/Teto.jsx";
 import Ground from "./components/Ground/Ground.jsx";
+import { isColliding } from "./utils/collision.js";
 
 import "./App.css";
 
@@ -132,6 +133,8 @@ function App() {
         jumpCooldown.current = 0;
       }
     }
+    //COLISAO SNU SNU 
+
 
     setDrawY(playerY.current);
 
