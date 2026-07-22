@@ -165,16 +165,16 @@ function App() {
       isPlayerCollidingWithSpike(player,topSpike) ||
       isPlayerCollidingWithSpike(player,bottomSpike)
     ){
-      console.log("colidi");
+      console.log("colidi " ,player,topSpike,bottomSpike);
     }
-console.log(
-   "PLAYER",
-   player,
-   "TOP",
-   topSpike,
-   "BOTTOM",
-   bottomSpike
- );
+// console.log(
+//    "PLAYER",
+//    player,
+//    "TOP",
+//    topSpike,
+//    "BOTTOM",
+//    bottomSpike
+//  );
 
 
     setDrawY(playerY.current);
