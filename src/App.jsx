@@ -94,7 +94,9 @@ function App() {
    const nextX = prev.top.x - speedBaseSpike * gameSpeed.current * dt;
 
       if(nextX < -250){
-        return createSpikes();
+        const next = createSpikes();
+        spikesRef.current = next;
+        return next;
       }
 
     const next = {
@@ -113,16 +115,10 @@ function App() {
      return next;
     });
    
-    const topHitboxes = createSpikeHitboxes(
-      spikesRef.current.top,
-      "top"
-    );
-    
-    const bottomHitboxes = createSpikeHitboxes(
-      spikesRef.current.bottom,
-      "bottom"
-    );
-
+    const hitboxes = [
+    ...createSpikeHitboxes(spikesRef.current.top, "top" ),
+    ...createSpikeHitboxes(spikesRef.current.bottom, "bottom" ),
+    ];
     //DELETAR 
    // const topSpike = {
    //  x:spikesRef.current.top.x + 6,
@@ -167,19 +163,16 @@ function App() {
     }
     const player = {
        x: 200,
-       y: playerY.current,
+       y: playerY.current + 8,
        width: 25,
        height: 25,
     };
     //COLISAO SNU SNU 
 
-    const collided = 
-      topHitboxes.some(hitbox =>
-      isPlayerCollidingWithSpike(player,hitbox)
-    ) ||
-      bottomHitboxes.some(hitbox =>
+    const collided = hitboxes.some(hitbox =>
       isPlayerCollidingWithSpike(player,hitbox)
     );
+
     if(collided){
       console.log("colidi papi");
     }
