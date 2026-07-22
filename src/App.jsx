@@ -75,6 +75,13 @@ function App() {
 
     const dt = deltaTime / 16.67;
 
+    const player = {
+     x: 100,
+     y: playerY.current,
+     width: playerSize,
+     height: playerSize,
+    };
+
     momentum.current -= MOMENTUM_DECAY * dt;
       if(momentum.current < 0 ){
         momentum.current = 0;
