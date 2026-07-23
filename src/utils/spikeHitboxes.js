@@ -13,13 +13,15 @@ export function createSpikeHitboxes(spike, side) {
   for(let i = 0; i < spike.amount; i++){
 
     hitboxes.push({
+    
+      side:side,
 
-      x: spike.x + i * SPIKE_SIZE + 12,
+      x: spike.x + i * SPIKE_SIZE ,
 
-      y: startY + 10,
+      y: startY ,
 
-      width: 40,
-      height: 40,
+      width: 64,
+      height: 64,
 
     });
 
