@@ -166,6 +166,7 @@ function App() {
     );
 
     if(collided){
+      BASE_GAME_SPEED = 0;
       console.log("colidi papi");
     }
 
@@ -193,7 +194,7 @@ function App() {
       if (jumpCooldown.current > 0) return;
 
       speed.current = jumpForce;
-      jumpCooldown.current = 0;
+      jumpCooldown.current = 2000;
 
       momentum.current = Math.min(
         momentum.current + MOMENTUM_GAIN,
@@ -233,7 +234,9 @@ function App() {
         side="bottom"
         amount={spikes.bottom.amount}
       />
+      
       <DebugHitboxes hitboxes={debugHitboxes}/>
+
       <Ground />
     </div>
   );
