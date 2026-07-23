@@ -55,3 +55,4 @@ export function createSpikeHitBoxes(spike,side){
   }
   return hitboxes;
 }
+

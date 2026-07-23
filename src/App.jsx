@@ -3,6 +3,7 @@ import Player from "./components/Player/Player.jsx";
 import Spikes from "./components/Spikes/Spikes.jsx";
 import Teto from "./components/Teto/Teto.jsx";
 import Ground from "./components/Ground/Ground.jsx";
+import DebugHitboxes  from "./utils/DebugHitboxes.jsx";
 import { isPlayerCollidingWithSpike } from "./utils/collision.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
 
@@ -28,7 +29,6 @@ function App() {
  //debugin 
 
   const [debugHitboxes,setDebugHitboxes] = useState([]);
-  const SHOW_HITBOXES = true;
 
   //gameSpeed 
 
@@ -257,24 +257,7 @@ function App() {
         side="bottom"
         amount={spikes.bottom.amount}
       />
-      {SHOW_HITBOXES &&
-  debugHitboxes.map((box, index) => (
-    <div
-      key={index}
-      style={{
-        position: "absolute",
-        left: box.x,
-        top: box.y,
-        width: box.width,
-        height: box.height,
-        border: "2px solid red",
-        boxSizing: "border-box",
-        pointerEvents: "none",
-        zIndex: 9999,
-      }}
-    />
-  ))}
-
+      <DebugHitboxes hitboxes={debugHitboxes}/>
       <Ground />
     </div>
   );
