@@ -3,17 +3,18 @@
   width: 64px;
   height: 64px;
   object-fit: contain;
+  z-index: -1;
 }
 
 
 /* Espinhos no teto */
 .top {
-  top: 5px;
+  top: 1px;
   transform: rotate(180deg);
 }
 
 
 /* Espinhos no chão */
 .bottom {
-  bottom: 5px;
+  bottom: 1px;
 }

@@ -15,7 +15,7 @@ export default function DebugHitboxes({ hitboxes }) {
             transform: box.side === "top"
               ? "rotate(180deg)"
               : "none",
-            opacity:0.4,
+            opacity:0.0,
             pointerEvents:"none"
           }}
         />
