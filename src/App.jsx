@@ -63,8 +63,8 @@ function App() {
 
 
   //LIMITE DO GROUND E TETO 
-  const TETO_HEIGHT = 0;
-  const GROUND_HEIGHT = 0;
+  const TETO_HEIGHT = 5;
+  const GROUND_HEIGHT = 5;
 
   const teto = TETO_HEIGHT;
   const floor = window.innerHeight - GROUND_HEIGHT - playerSize;

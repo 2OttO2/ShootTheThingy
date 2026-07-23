@@ -1,25 +1,29 @@
-
 const SPIKE_SIZE = 64;
 
-export function createSpikeHitboxes(spike,side){
+export function createSpikeHitboxes(spike, side) {
+
   const hitboxes = [];
 
-    const startY = 
+  const startY =
     side === "top"
-    ? 0 
-    : window.innerHeight - spike.amount * SPIKE_SIZE;
+      ? 5
+      : window.innerHeight - SPIKE_SIZE - 5;
 
-      for(let i = 0; i < spike.amount; i++){
+
+  for(let i = 0; i < spike.amount; i++){
+
     hitboxes.push({
-      x: spike.x + 12,
-      y:
-        side === "top"
-        ? startY + i * SPIKE_SIZE
-        : startY + i * SPIKE_SIZE +16,
 
-      width:40,
-      height:40,
+      x: spike.x + i * SPIKE_SIZE + 12,
+
+      y: startY + 10,
+
+      width: 40,
+      height: 40,
+
     });
+
   }
+
   return hitboxes;
 }

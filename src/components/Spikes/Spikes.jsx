@@ -1,7 +1,7 @@
 import styles from "./Spikes.module.css";
 import spikeImg from "../../assets/spike.png";
 
-function Spikes({ x, side, amount }) {
+function Spikes({ x, side, amount}) {
 
   return (
     <>
@@ -11,7 +11,7 @@ function Spikes({ x, side, amount }) {
           src={spikeImg}
           className={`${styles.spike} ${styles[side]}`}
           style={{
-            left: `${x + index * 50}px`
+            left: `${x + index * 64}px`
           }}
           alt=""
         />
