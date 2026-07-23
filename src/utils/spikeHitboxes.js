@@ -11,7 +11,7 @@ export function createSpikeHitboxes(spike, side) {
 
   for (let i = 0; i < spike.amount; i++) {
 
-    const x = spike.x + i * SPIKE_SIZE;
+    const x = spike.x + i * SPIKE_SIZE -2;
     const y = startY;
 
 
@@ -19,14 +19,14 @@ export function createSpikeHitboxes(spike, side) {
       points:
         side === "bottom"
           ? [
-              { x: x + 32, y: y },
-              { x: x, y: y + 64 },
-              { x: x + 64, y: y + 64 },
+              { x: x + 30, y: y },
+              { x: x + 13, y: y + 64 },
+              { x: x + 51, y: y + 64 },
             ]
           : [
-              { x: x, y: y },
-              { x: x + 64, y: y },
-              { x: x + 32, y: y + 64 },
+              { x: x + 13, y: y },
+              { x: x + 51, y: y },
+              { x: x + 30, y: y + 64 },
             ],
     });
 
