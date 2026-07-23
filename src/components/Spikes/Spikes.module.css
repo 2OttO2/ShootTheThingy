@@ -1,27 +1,19 @@
-.spikes {
-    position: absolute;
-    display: flex;
-    width:100vh;
-    z-index: 10;
-}
-
-.top {
-    top: 0;
-    left: 0;
-}
-
-.bottom {
-    left: 0;
-    bottom:0;
-}
-
 .spike {
-    width: 64px;
-    height: 64px;
-    object-fit: contain;
+  position: absolute;
+  width: 50px;
+  height: 50px;
+  object-fit: contain;
 }
 
-/* Apenas os spikes do teto ficam invertidos */
-.top .spike {
-    transform: rotate(180deg);
+
+/* Espinhos no teto */
+.top {
+  top: 5;
+  transform: rotate(180deg);
+}
+
+
+/* Espinhos no chão */
+.bottom {
+  bottom: 5px;
 }
