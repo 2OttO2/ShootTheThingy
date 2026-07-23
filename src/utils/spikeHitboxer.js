@@ -1,35 +1,57 @@
+const SPIKE_SIZE = 34;
 
-const SPIKE_SIZE = 64;
+//corpo do spike 
 
-const HITBOX = {
-  x: 14,
-  width: 36,
-
-  topY: 8,
-  bottomY: 22,
-
-  height: 34,
+const BODY = {
+  x:10,
+  y:0,
+  width:44,
+  height:34,
 };
 
-export function createSpikeHitboxes(spike,side){
+const TIP = {
+  x:20,
+  y:0,
+  width:24,
+  height:18,
+};
+
+function createSigleSpikeHitbox(x,y){
+  return [
+
+    {
+      x:x + BODY.x,
+      y:y + BODY.y,
+      width: BODY.width,
+      height: BODY.height,
+    },
+
+    {
+      x:x + TIP.x,
+      y:y + TIP.y,
+      width: TIP.width,
+      height: TIP.height,
+    },
+  ];
+}
+
+export function createSpikeHitBoxes(spike,side){
   const hitboxes = [];
 
-    const startY = 
+  const startY = 
     side === "top"
     ? 0 
     : window.innerHeight - spike.amount * SPIKE_SIZE;
 
-      for(let i = 0; i < spike.amount; i++){
-    hitboxes.push({
-      x: spike.x + HITBOX.x,
-      y:
-        side === "top"
-        ? startY + i * SPIKE_SIZE + HITBOX.topY
-        : startY + i * SPIKE_SIZE + HITBOX.bottomY,
+    for(let i = 0; i < spike.amount; i++){
+    const y = 
+      side === "top"
+        ? startY + i * SPIKE_SIZE
+        : startY + i * SPIKE_SIZE;
 
-      width:HITBOX.width,
-      height:HITBOX.height,
-    });
+      hitboxes.push(
+      ...createSpikeHitBoxes(spike.x, y)
+    );
   }
   return hitboxes;
 }

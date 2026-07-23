@@ -25,7 +25,12 @@ function App() {
   const [spikes, setSpikes] = useState(createSpikes);
   const spikesRef = useRef(spikes);
 
-  //gameSpeed
+ //debugin 
+
+  const [debugHitboxes,setDebugHitboxes] = useState([]);
+  const SHOW_HITBOXES = true;
+
+  //gameSpeed 
 
   const BASE_GAME_SPEED = 1;
   const MAX_GAME_SPEED = 10;
@@ -119,6 +124,8 @@ function App() {
     ...createSpikeHitboxes(spikesRef.current.top, "top" ),
     ...createSpikeHitboxes(spikesRef.current.bottom, "bottom" ),
     ];
+
+    setDebugHitboxes(hitboxes);
     //DELETAR 
    // const topSpike = {
    //  x:spikesRef.current.top.x + 6,
@@ -250,6 +257,23 @@ function App() {
         side="bottom"
         amount={spikes.bottom.amount}
       />
+      {SHOW_HITBOXES &&
+  debugHitboxes.map((box, index) => (
+    <div
+      key={index}
+      style={{
+        position: "absolute",
+        left: box.x,
+        top: box.y,
+        width: box.width,
+        height: box.height,
+        border: "2px solid red",
+        boxSizing: "border-box",
+        pointerEvents: "none",
+        zIndex: 9999,
+      }}
+    />
+  ))}
 
       <Ground />
     </div>
