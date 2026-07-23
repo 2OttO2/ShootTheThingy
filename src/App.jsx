@@ -126,19 +126,6 @@ function App() {
     ];
 
     setDebugHitboxes(hitboxes);
-    //DELETAR 
-   // const topSpike = {
-   //  x:spikesRef.current.top.x + 6,
-   //  y: -65,
-   //  width:spikeSize,
-   //  height:spikes.top.amount * spikeSize,
-   // };
-   // const bottomSpike = {
-   //   x:spikesRef.current.bottom.x + 6,
-   //   y: 864,
-   //   width:spikeSize,
-   //   height:spikes.bottom.amount * spikeSize,
-   // };
 
     // ===========================
     // PLAYER
@@ -146,8 +133,6 @@ function App() {
 
     speed.current += gravity * dt;
     playerY.current += speed.current * dt;
-
-
 
     // Bounce no teto
     if (playerY.current <= teto) {
@@ -183,15 +168,6 @@ function App() {
     if(collided){
       console.log("colidi papi");
     }
-// console.log(
-//    "PLAYER",
-//    player,
-//    "TOP",
-//    topSpike,
-//    "BOTTOM",
-//    bottomSpike
-//  );
-
 
     setDrawY(playerY.current);
 
