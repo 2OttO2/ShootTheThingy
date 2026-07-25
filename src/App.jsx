@@ -4,6 +4,7 @@ import Spikes from "./components/Spikes/Spikes.jsx";
 import Teto from "./components/Teto/Teto.jsx";
 import Ground from "./components/Ground/Ground.jsx";
 import DebugHitboxes  from "./utils/DebugHitboxes.jsx";
+import GameOver from "./components/GameOver/GameOver.jsx";
 import { isPlayerCollidingWithSpike } from "./utils/collision.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
 
@@ -27,8 +28,11 @@ function App() {
 
   const [debugHitboxes,setDebugHitboxes] = useState([]);
 
-  //gameSpeed 
+  //gameSpeed /STATE 
 
+  const GAME_STATE = { PLAYING : "playing", DEAD: "dead",};
+  const [gameState,setGameState] = useState(GAME_STATE.PLAYING);
+  const isDeadRef = useRef(false);
   const BASE_GAME_SPEED = 1;
   const MAX_GAME_SPEED = 10;
 
@@ -49,11 +53,7 @@ function App() {
   const playerY = useRef(350);
   const speed = useRef(0);
   const playerSize = 40;
-  const GAME_STATE = { PLAYING : "playing", DEAD: "dead",};
-  const [gameState,setGameState] = useState(GAME_STATE.PLAYING);
-  const isDeadRef = useRef(false);
-
-
+ 
 
   //fisica 
   const gravity = 0.3;
@@ -75,6 +75,8 @@ function App() {
   const floor = window.innerHeight - GROUND_HEIGHT - playerSize;
 
   // ONDE TUDO ACONTECE
+
+
 
   const gameLoop = (time) => {
 
@@ -191,8 +193,13 @@ function App() {
 
   useEffect(() => {
     const keyDown = (e) => {
-      if (e.code !== "Space") return;
 
+      if (e.code !== "Space") return;
+    
+      if(gameState === GAME_STATE.DEAD){
+
+        return;
+      }
       e.preventDefault();
 
       if (spaceHeld.current) return;
@@ -223,12 +230,15 @@ function App() {
       window.removeEventListener("keydown", keyDown);
       window.removeEventListener("keyup", keyUp);
     };
-  }, []);
+  }, [gameState]);
 
   return (
     <div className="game">
       <Teto />
-
+  
+      {gameState === GAME_STATE.DEAD && (
+      <GameOver/>
+      )}
       <Player drawY={drawY} />
 
       <Spikes
