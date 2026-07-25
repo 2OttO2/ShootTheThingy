@@ -30,6 +30,9 @@ function App() {
 
   //gameSpeed /STATE 
 
+  const [distance,setDistance] = useState(0);
+  const distanceRef = useRef(0);
+
   const GAME_STATE = { PLAYING : "playing", DEAD: "dead",};
   const [gameState,setGameState] = useState(GAME_STATE.PLAYING);
   const isDeadRef = useRef(false);
@@ -113,6 +116,9 @@ function App() {
     lastTime.current = time;
 
     const dt = deltaTime / 16.67;
+
+    distanceRef.current += gameSpeed.current * dt;
+    setDistance(Math.floor(distanceRef.current));
 
     momentum.current -= MOMENTUM_DECAY * dt;
       if(momentum.current < 0 ){
