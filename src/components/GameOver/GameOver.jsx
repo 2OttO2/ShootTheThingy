@@ -1,6 +1,6 @@
 import styles from "./GameOver.module.css";
 
-function GameOver(){
+function GameOver({ onRestart }){
 
   return(
     <>

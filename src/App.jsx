@@ -74,6 +74,29 @@ function App() {
   const teto = TETO_HEIGHT;
   const floor = window.innerHeight - GROUND_HEIGHT - playerSize;
 
+  function resetGame(){
+    isDeadRef.current = false;
+    setGameState(GAME_STATE.PLAYING);
+
+    playerY.current = 350;
+    speed.current = 0;
+    setDrawY(350);
+
+    momentum.current = 0;
+    gameSpeed.current = BASE_GAME_SPEED;
+
+    jumpCooldown.current = 0;
+    spaceHeld.current = false;
+
+    const next = createSpikes();
+    spikesRef.current = next;
+    setSpikes(next);
+
+    isDeadRef.current = false;
+    lastTime.current = 0;
+    animationRef.current = requestAnimationFrame(gameLoop);
+  }
+
   // ONDE TUDO ACONTECE
 
 
@@ -197,7 +220,7 @@ function App() {
       if (e.code !== "Space") return;
     
       if(gameState === GAME_STATE.DEAD){
-
+        resetGame();
         return;
       }
       e.preventDefault();
@@ -237,7 +260,8 @@ function App() {
       <Teto />
   
       {gameState === GAME_STATE.DEAD && (
-      <GameOver/>
+      <GameOver
+      />
       )}
       <Player drawY={drawY} />
 
