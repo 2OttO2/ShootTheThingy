@@ -22,10 +22,7 @@ function App() {
     },
   });
 
-  const [drawY, setDrawY] = useState(350);
-  const [spikes, setSpikes] = useState(createSpikes);
-  const spikesRef = useRef(spikes);
-
+ 
  //debugin 
 
   const [debugHitboxes,setDebugHitboxes] = useState([]);
@@ -42,15 +39,23 @@ function App() {
   const MOMENTUM_DECAY = 0.005;
 
   //spikes 
-  
+  const [spikes, setSpikes] = useState(createSpikes);
+  const spikesRef = useRef(spikes);
   const spikeSize = 64;
   const speedBaseSpike = 4;
 
   //player 
+  const [drawY, setDrawY] = useState(350);
   const playerY = useRef(350);
   const speed = useRef(0);
   const playerSize = 40;
+  const GAME_STATE = { PLAYING : "playing", DEAD: "dead",};
+  const [gameState,setGameState] = useState(GAME_STATE.PLAYING);
+  const isDeadRef = useRef(false);
 
+
+
+  //fisica 
   const gravity = 0.3;
   const jumpForce = -15;
   const bounce = 0.8;
@@ -72,6 +77,8 @@ function App() {
   // ONDE TUDO ACONTECE
 
   const gameLoop = (time) => {
+
+    if(isDeadRef.current) return;
 
     if (lastTime.current === 0) {
       lastTime.current = time;
@@ -166,7 +173,8 @@ function App() {
     );
 
     if(collided){
-      BASE_GAME_SPEED = 0;
+      isDeadRef.current = true;
+      setGameState(GAME_STATE.DEAD);
       console.log("colidi papi");
     }
 
