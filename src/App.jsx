@@ -5,6 +5,7 @@ import Teto from "./components/Teto/Teto.jsx";
 import Ground from "./components/Ground/Ground.jsx";
 import DebugHitboxes  from "./utils/DebugHitboxes.jsx";
 import GameOver from "./components/GameOver/GameOver.jsx";
+import Distance from "./components/Distance/Distance.jsx";
 import { isPlayerCollidingWithSpike } from "./utils/collision.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
 
@@ -87,6 +88,8 @@ function App() {
 
     momentum.current = 0;
     gameSpeed.current = BASE_GAME_SPEED;
+    distanceRef.current = 0;
+    setDistance(0);
 
     jumpCooldown.current = 0;
     spaceHeld.current = false;
@@ -102,8 +105,6 @@ function App() {
 
   // ONDE TUDO ACONTECE
 
-
-
   const gameLoop = (time) => {
 
     if(isDeadRef.current) return;
@@ -117,9 +118,6 @@ function App() {
 
     const dt = deltaTime / 16.67;
 
-    distanceRef.current += gameSpeed.current * dt;
-    setDistance(Math.floor(distanceRef.current));
-
     momentum.current -= MOMENTUM_DECAY * dt;
       if(momentum.current < 0 ){
         momentum.current = 0;
@@ -128,6 +126,9 @@ function App() {
       BASE_GAME_SPEED + momentum.current,
       MAX_GAME_SPEED
     );
+  
+    distanceRef.current += gameSpeed.current * dt;
+    setDistance(Math.floor(distanceRef.current));
 
     // ===========================
     // SPIKES
@@ -220,6 +221,7 @@ function App() {
     return () => cancelAnimationFrame(animationRef.current);
   }, []);
 
+
   useEffect(() => {
     const keyDown = (e) => {
 
@@ -269,6 +271,9 @@ function App() {
       <GameOver
       />
       )}
+
+      <Distance distance={distance}/>  
+
       <Player drawY={drawY} />
 
       <Spikes
