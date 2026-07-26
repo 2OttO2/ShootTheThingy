@@ -91,7 +91,7 @@ function App() {
   // =====================
   // GAME LOOP
   // =====================
-  
+
   const gameLoop = (time) => {
     if (isDeadRef.current) return;
 
@@ -221,7 +221,10 @@ function App() {
     <div className="game">
       <Teto />
 
-      {gameState === GAME_STATE.DEAD && <GameOver />}
+      {gameState === GAME_STATE.DEAD && <GameOver
+      distance={distance}
+      onRestart={resetGame}
+      />}
 
       <Distance distance={distance} />
 

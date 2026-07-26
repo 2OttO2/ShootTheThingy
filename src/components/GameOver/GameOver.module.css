@@ -1,8 +1,80 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
 
-.deadMessage{
-  position:absolute;
-  color:red;
-  background-color:black;
-  top:50vh;
-  left:30vh;
+.box {
+  background: #111;
+  border: 3px solid #ff3333;
+  border-radius: 12px;
+  padding: 40px 60px;
+  text-align: center;
+  color: white;
+  min-width: 280px;
+  box-shadow: 0 0 30px rgba(255, 50, 50, 0.4);
+}
+
+.title {
+  margin: 0 0 8px;
+  font-size: 2.4rem;
+  color: #ff3333;
+  letter-spacing: 2px;
+}
+
+.subtitle {
+  margin: 0 0 28px;
+  font-size: 1rem;
+  color: #aaa;
+}
+
+.score {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 28px;
+}
+
+.scoreLabel {
+  font-size: 0.85rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.scoreValue {
+  font-size: 2.8rem;
+  font-weight: bold;
+  color: #fff;
+}
+
+.button {
+  background: #ff3333;
+  color: white;
+  border: none;
+  padding: 12px 36px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.button:hover {
+  background: #ff5555;
+  transform: scale(1.05);
+}
+
+.button:active {
+  transform: scale(0.97);
+}
+
+.hint {
+  margin: 16px 0 0;
+  font-size: 0.8rem;
+  color: #666;
 }
