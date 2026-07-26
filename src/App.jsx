@@ -4,22 +4,20 @@ import Player from "./components/Player/Player.jsx";
 import Spikes from "./components/Spikes/Spikes.jsx";
 import Teto from "./components/Teto/Teto.jsx";
 import Ground from "./components/Ground/Ground.jsx";
-import DebugHitboxes  from "./utils/DebugHitboxes.jsx";
+import DebugHitboxes from "./utils/DebugHitboxes.jsx";
 import GameOver from "./components/GameOver/GameOver.jsx";
 import Distance from "./components/Distance/Distance.jsx";
 
+import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
 import { isPlayerCollidingWithSpike } from "./utils/collision.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
-
-//VARIAVEIS 
 
 import {
   BASE_GAME_SPEED,
   MAX_GAME_SPEED,
   MOMENTUM_GAIN,
   MOMENTUM_DECAY,
-  SPIKE_SPEED,
   PLAYER_SIZE,
   GRAVITY,
   JUMP_FORCE,
@@ -31,90 +29,71 @@ import {
 import "./App.css";
 
 function App() {
+  // debug
+  const [debugHitboxes, setDebugHitboxes] = useState([]);
 
-  const createSpikes = () => ({
-    top: {
-      x: window.innerWidth + 100,
-      amount: Math.floor(Math.random() * 3) + 2,
-    },
-    bottom: {
-      x: window.innerWidth + 100,
-      amount: Math.floor(Math.random() * 3) + 2,
-    },
-  });
-
- 
- //debugin 
-
-  const [debugHitboxes,setDebugHitboxes] = useState([]);
-
-  //gameSpeed /STATE 
-
-  const [distance,setDistance] = useState(0);
+  // distance
+  const [distance, setDistance] = useState(0);
   const distanceRef = useRef(0);
 
-  const GAME_STATE = { PLAYING : "playing", DEAD: "dead",};
-  const [gameState,setGameState] = useState(GAME_STATE.PLAYING);
+  // game state
+  const GAME_STATE = { PLAYING: "playing", DEAD: "dead" };
+  const [gameState, setGameState] = useState(GAME_STATE.PLAYING);
   const isDeadRef = useRef(false);
 
   const gameSpeed = useRef(BASE_GAME_SPEED);
   const momentum = useRef(0);
 
+  // =====================
+  // HOOKS
+  // =====================
+  const {
+    spikes,
+    spikesRef,
+    updateSpikes,
+    resetSpikes,
+  } = useSpikes();
 
-  //spikes 
-  const [spikes, setSpikes] = useState(createSpikes);
-  const spikesRef = useRef(spikes);
-
-  //player 
-  const [drawY, setDrawY] = useState(350);
-  const playerY = useRef(350);
-  const speed = useRef(0);
- 
-
-  //fisica 
-
-  const jumpCooldown = useRef(0);
-  const spaceHeld = useRef(false);
+  const {
+    drawY,
+    setDrawY,
+    playerY,
+    speed,
+    jumpCooldown,
+    spaceHeld,
+    resetPlayer,
+  } = usePlayerPhysics(350);
 
   const animationRef = useRef(null);
   const lastTime = useRef(0);
 
-
-  //LIMITE DO GROUND E TETO 
-
+  // limites
   const teto = TETO_HEIGHT;
   const floor = window.innerHeight - GROUND_HEIGHT - PLAYER_SIZE;
 
-  function resetGame(){
+  function resetGame() {
     isDeadRef.current = false;
     setGameState(GAME_STATE.PLAYING);
 
-    playerY.current = 350;
-    speed.current = 0;
-    setDrawY(350);
+    resetPlayer();
 
     momentum.current = 0;
     gameSpeed.current = BASE_GAME_SPEED;
     distanceRef.current = 0;
     setDistance(0);
 
-    jumpCooldown.current = 0;
-    spaceHeld.current = false;
+    resetSpikes();
 
-    const next = createSpikes();
-    spikesRef.current = next;
-    setSpikes(next);
-
-    isDeadRef.current = false;
     lastTime.current = 0;
     animationRef.current = requestAnimationFrame(gameLoop);
   }
 
-  // ONDE TUDO ACONTECE
-
+  // =====================
+  // GAME LOOP
+  // =====================
+  
   const gameLoop = (time) => {
-
-    if(isDeadRef.current) return;
+    if (isDeadRef.current) return;
 
     if (lastTime.current === 0) {
       lastTime.current = time;
@@ -122,96 +101,67 @@ function App() {
 
     const deltaTime = Math.min(time - lastTime.current, 50);
     lastTime.current = time;
-
     const dt = deltaTime / 16.67;
 
+    // momentum / speed
     momentum.current -= MOMENTUM_DECAY * dt;
-      if(momentum.current < 0 ){
-        momentum.current = 0;
+    if (momentum.current < 0) {
+      momentum.current = 0;
     }
-      gameSpeed.current = Math.min(
+    gameSpeed.current = Math.min(
       BASE_GAME_SPEED + momentum.current,
       MAX_GAME_SPEED
     );
-  
+
     distanceRef.current += gameSpeed.current * dt;
     setDistance(Math.floor(distanceRef.current));
 
-    // ===========================
-    // SPIKES
-    // ===========================
-   setSpikes((prev) => {
+    // spikes
+    updateSpikes(dt, gameSpeed.current);
 
-   const nextX = prev.top.x - SPIKE_SPEED * gameSpeed.current * dt;
-
-      if(nextX < -250){
-        const next = createSpikes();
-        spikesRef.current = next;
-        return next;
-      }
-
-    const next = {
-      top: {
-       ...prev.top,
-        x: nextX,
-      },
-      bottom: {
-          ...prev.bottom,
-          x: nextX,
-        },
-      };
-
-     spikesRef.current = next;
-
-     return next;
-    });
-   
     const hitboxes = [
-    ...createSpikeHitboxes(spikesRef.current.top, "top" ),
-    ...createSpikeHitboxes(spikesRef.current.bottom, "bottom" ),
+      ...createSpikeHitboxes(spikesRef.current.top, "top"),
+      ...createSpikeHitboxes(spikesRef.current.bottom, "bottom"),
     ];
-
     setDebugHitboxes(hitboxes);
 
-    // ===========================
-    // PLAYER
-    // ===========================
-
+    // player physics
     speed.current += GRAVITY * dt;
     playerY.current += speed.current * dt;
 
-    // Bounce no teto
+    // bounce teto
     if (playerY.current <= teto) {
       playerY.current = teto;
-      speed.current *= - BOUNCE;
+      speed.current *= -BOUNCE;
     }
 
-    // Bounce no chão
+    // bounce chão
     if (playerY.current >= floor) {
       playerY.current = floor;
       speed.current *= -BOUNCE;
     }
 
+    // jump cooldown
     if (jumpCooldown.current > 0) {
       jumpCooldown.current -= deltaTime;
-
       if (jumpCooldown.current < 0) {
         jumpCooldown.current = 0;
       }
     }
-    const player = {
-       x: 200,
-       y: playerY.current + 8,
-       width: 25,
-       height: 25,
-    };
-    //COLISAO SNU SNU 
 
-    const collided = hitboxes.some(hitbox =>
-      isPlayerCollidingWithSpike(player,hitbox)
+    // colisão
+    const player = {
+      x: 200,
+      y: playerY.current + 8,
+      width: 25,
+      height: 25,
+    };
+
+    const collided = hitboxes.some((hitbox) =>
+      isPlayerCollidingWithSpike(player, hitbox)
     );
 
-    if(collided){
+    if (collided) {
       isDeadRef.current = true;
       setGameState(GAME_STATE.DEAD);
       console.log("colidi papi");
@@ -224,29 +174,26 @@ function App() {
 
   useEffect(() => {
     animationRef.current = requestAnimationFrame(gameLoop);
-
     return () => cancelAnimationFrame(animationRef.current);
   }, []);
 
-
   useEffect(() => {
     const keyDown = (e) => {
-
       if (e.code !== "Space") return;
-    
-      if(gameState === GAME_STATE.DEAD){
+
+      if (gameState === GAME_STATE.DEAD) {
         resetGame();
         return;
       }
+
       e.preventDefault();
 
       if (spaceHeld.current) return;
-
       spaceHeld.current = true;
 
       if (jumpCooldown.current > 0) return;
 
-      speed.current = JUMP_FORCE; 
+      speed.current = JUMP_FORCE;
       jumpCooldown.current = 2000;
 
       momentum.current = Math.min(
@@ -273,13 +220,10 @@ function App() {
   return (
     <div className="game">
       <Teto />
-  
-      {gameState === GAME_STATE.DEAD && (
-      <GameOver
-      />
-      )}
 
-      <Distance distance={distance}/>  
+      {gameState === GAME_STATE.DEAD && <GameOver />}
+
+      <Distance distance={distance} />
 
       <Player drawY={drawY} />
 
@@ -294,8 +238,8 @@ function App() {
         side="bottom"
         amount={spikes.bottom.amount}
       />
-      
-      <DebugHitboxes hitboxes={debugHitboxes}/>
+
+      <DebugHitboxes hitboxes={debugHitboxes} />
 
       <Ground />
     </div>

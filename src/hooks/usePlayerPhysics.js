@@ -1,57 +1,30 @@
-import { useState, useEffect } from "react";
+import { useRef, useState } from "react";
 
-export default function usePlayerPhysics(gameOver) {
-  const GROUND_Y = 780;
-  const GRAVITY = 0.8;
-  const JUMP_FORCE = -15;
+export default function usePlayerPhysics(initialY = 350) {
+  const [drawY, setDrawY] = useState(initialY);
 
-  const [playerY, setPlayerY] = useState(GROUND_Y);
-  const [velocityY, setVelocityY] = useState(0);
+  const playerY = useRef(initialY);
+  const speed = useRef(0);
 
-  useEffect(() => {
-    if (gameOver) return;
+  const jumpCooldown = useRef(0);
+  const spaceHeld = useRef(false);
 
-    const interval = setInterval(() => {
-      setVelocityY((prevVelocity) => {
-        const newVelocity = prevVelocity + GRAVITY;
+  const resetPlayer = () => {
+    playerY.current = initialY;
+    speed.current = 0;
+    setDrawY(initialY);
 
-        setPlayerY((prevY) => {
-          let newY = prevY + newVelocity;
-
-          if (newY > GROUND_Y) {
-            newY = GROUND_Y;
-            setVelocityY(0);
-          }
-
-          return newY;
-        });
-
-        return newVelocity;
-      });
-    }, 16);
-
-    return () => clearInterval(interval);
-  }, [gameOver]);
-
-  const jump = () => {
-    setPlayerY((currentY) => {
-      if (currentY >= GROUND_Y) {
-        setVelocityY(JUMP_FORCE);
-      }
-
-      return currentY;
-    });
-  };
-
-  const resetPhysics = () => {
-    setPlayerY(GROUND_Y);
-    setVelocityY(0);
+    jumpCooldown.current = 0;
+    spaceHeld.current = false;
   };
 
   return {
+    drawY,
+    setDrawY,
     playerY,
-    velocityY,
-    jump,
-    resetPhysics,
+    speed,
+    jumpCooldown,
+    spaceHeld,
+    resetPlayer,
   };
 }
