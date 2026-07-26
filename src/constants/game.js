@@ -10,8 +10,59 @@ export const SPIKE_SPEED = 4;
 export const PLAYER_SIZE = 40;
 
 export const GRAVITY = 0.3;
-export const JUMP_FORCE = -15;
+export const JUMP_FORCE = -15; // fallback
 export const BOUNCE = 0.8;
 
 export const TETO_HEIGHT = 5;
 export const GROUND_HEIGHT = 5;
+
+// =====================
+// ARMAS
+// impact  = força do recoil (empurra o player)
+// firerate = delay mínimo entre tiros (ms)
+// reload   = tempo de recarga (ms)
+// magazine = tiros antes de recarregar
+// =====================
+
+export const WEAPONS = {
+  pistol: {
+    id: "pistol",
+    name: "Pistola",
+    description: "Equilibrada. Boa pra começar.",
+    impact: -12,
+    firerate: 280,
+    reload: 900,
+    magazine: 12,
+    color: "#f1c40f",
+  },
+  sub: {
+    id: "sub",
+    name: "Sub",
+    description: "Muito rápida, pouco impacto.",
+    impact: -7,
+    firerate: 90,
+    reload: 1200,
+    magazine: 30,
+    color: "#2ecc71",
+  },
+  shotgun: {
+    id: "shotgun",
+    name: "Escopeta",
+    description: "Impacto alto, cadência baixa.",
+    impact: -22,
+    firerate: 700,
+    reload: 1600,
+    magazine: 6,
+    color: "#e67e22",
+  },
+  sniper: {
+    id: "sniper",
+    name: "Sniper",
+    description: "Impacto absurdo, bem lenta.",
+    impact: -32,
+    firerate: 1100,
+    reload: 2200,
+    magazine: 5,
+    color: "#e74c3c",
+  },
+};
