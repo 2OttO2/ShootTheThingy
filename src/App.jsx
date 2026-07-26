@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+
 import Player from "./components/Player/Player.jsx";
 import Spikes from "./components/Spikes/Spikes.jsx";
 import Teto from "./components/Teto/Teto.jsx";
@@ -6,8 +7,26 @@ import Ground from "./components/Ground/Ground.jsx";
 import DebugHitboxes  from "./utils/DebugHitboxes.jsx";
 import GameOver from "./components/GameOver/GameOver.jsx";
 import Distance from "./components/Distance/Distance.jsx";
+
+import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
 import { isPlayerCollidingWithSpike } from "./utils/collision.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
+
+//VARIAVEIS 
+
+import {
+  BASE_GAME_SPEED,
+  MAX_GAME_SPEED,
+  MOMENTUM_GAIN,
+  MOMENTUM_DECAY,
+  SPIKE_SPEED,
+  PLAYER_SIZE,
+  GRAVITY,
+  JUMP_FORCE,
+  BOUNCE,
+  TETO_HEIGHT,
+  GROUND_HEIGHT,
+} from "./constants/game.js";
 
 import "./App.css";
 
@@ -37,32 +56,22 @@ function App() {
   const GAME_STATE = { PLAYING : "playing", DEAD: "dead",};
   const [gameState,setGameState] = useState(GAME_STATE.PLAYING);
   const isDeadRef = useRef(false);
-  const BASE_GAME_SPEED = 1;
-  const MAX_GAME_SPEED = 10;
 
   const gameSpeed = useRef(BASE_GAME_SPEED);
   const momentum = useRef(0);
 
-  const MOMENTUM_GAIN = 1.35;
-  const MOMENTUM_DECAY = 0.005;
 
   //spikes 
   const [spikes, setSpikes] = useState(createSpikes);
   const spikesRef = useRef(spikes);
-  const spikeSize = 64;
-  const speedBaseSpike = 4;
 
   //player 
   const [drawY, setDrawY] = useState(350);
   const playerY = useRef(350);
   const speed = useRef(0);
-  const playerSize = 40;
  
 
   //fisica 
-  const gravity = 0.3;
-  const jumpForce = -15;
-  const bounce = 0.8;
 
   const jumpCooldown = useRef(0);
   const spaceHeld = useRef(false);
@@ -72,11 +81,9 @@ function App() {
 
 
   //LIMITE DO GROUND E TETO 
-  const TETO_HEIGHT = 5;
-  const GROUND_HEIGHT = 5;
 
   const teto = TETO_HEIGHT;
-  const floor = window.innerHeight - GROUND_HEIGHT - playerSize;
+  const floor = window.innerHeight - GROUND_HEIGHT - PLAYER_SIZE;
 
   function resetGame(){
     isDeadRef.current = false;
@@ -135,7 +142,7 @@ function App() {
     // ===========================
    setSpikes((prev) => {
 
-   const nextX = prev.top.x - speedBaseSpike * gameSpeed.current * dt;
+   const nextX = prev.top.x - SPIKE_SPEED * gameSpeed.current * dt;
 
       if(nextX < -250){
         const next = createSpikes();
@@ -170,19 +177,19 @@ function App() {
     // PLAYER
     // ===========================
 
-    speed.current += gravity * dt;
+    speed.current += GRAVITY * dt;
     playerY.current += speed.current * dt;
 
     // Bounce no teto
     if (playerY.current <= teto) {
       playerY.current = teto;
-      speed.current *= -bounce;
+      speed.current *= - BOUNCE;
     }
 
     // Bounce no chão
     if (playerY.current >= floor) {
       playerY.current = floor;
-      speed.current *= -bounce;
+      speed.current *= -BOUNCE;
     }
 
     if (jumpCooldown.current > 0) {
@@ -239,7 +246,7 @@ function App() {
 
       if (jumpCooldown.current > 0) return;
 
-      speed.current = jumpForce;
+      speed.current = JUMP_FORCE; 
       jumpCooldown.current = 2000;
 
       momentum.current = Math.min(
