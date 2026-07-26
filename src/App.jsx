@@ -55,6 +55,8 @@ function App() {
   // arma selecionada
   const [selectedWeaponId, setSelectedWeaponId] = useState(null);
   const selectedWeapon = selectedWeaponId ? WEAPONS[selectedWeaponId] : null;
+  const selectedWeaponRef = useRef(null);
+  selectedWeaponRef.current = selectedWeapon;
 
   const gameSpeed = useRef(BASE_GAME_SPEED);
   const momentum = useRef(0);
@@ -81,6 +83,11 @@ function App() {
 
   const animationRef = useRef(null);
   const lastTime = useRef(0);
+
+  // munição / reload
+  const ammoRef = useRef(0);
+  const isReloadingRef = useRef(false);
+  const reloadTimerRef = useRef(0);
 
   // limites
   const teto = TETO_HEIGHT;
@@ -119,6 +126,12 @@ function App() {
     resetSpikes();
     lastTime.current = 0;
 
+    // reseta munição da arma escolhida
+    const weapon = WEAPONS[weaponId];
+    ammoRef.current = weapon ? weapon.magazine : 12;
+    isReloadingRef.current = false;
+    reloadTimerRef.current = 0;
+
     animationRef.current = requestAnimationFrame(gameLoop);
   }
 
@@ -134,6 +147,11 @@ function App() {
     setDistance(0);
     resetSpikes();
     lastTime.current = 0;
+
+    // reseta munição
+    ammoRef.current = selectedWeapon ? selectedWeapon.magazine : 12;
+    isReloadingRef.current = false;
+    reloadTimerRef.current = 0;
 
     animationRef.current = requestAnimationFrame(gameLoop);
   }
@@ -190,11 +208,22 @@ function App() {
       speed.current *= -BOUNCE;
     }
 
-    // jump cooldown (depois vira firerate da arma)
+    // firerate cooldown
     if (jumpCooldown.current > 0) {
       jumpCooldown.current -= deltaTime;
       if (jumpCooldown.current < 0) {
         jumpCooldown.current = 0;
+      }
+    }
+
+    // reload timer
+    if (isReloadingRef.current) {
+      reloadTimerRef.current -= deltaTime;
+      if (reloadTimerRef.current <= 0) {
+        isReloadingRef.current = false;
+        reloadTimerRef.current = 0;
+        const weapon = selectedWeaponRef.current;
+        ammoRef.current = weapon ? weapon.magazine : 12;
       }
     }
 
@@ -215,7 +244,8 @@ function App() {
       setGameState(GAME_STATE.DEAD);
 
       // salva score
-      const weaponName = selectedWeapon ? selectedWeapon.name : "—";
+      const weapon = selectedWeaponRef.current;
+      const weaponName = weapon ? weapon.name : "—";
       saveScore(Math.floor(distanceRef.current), weaponName);
 
       console.log("colidi papi");
@@ -261,15 +291,36 @@ function App() {
       if (spaceHeld.current) return;
       spaceHeld.current = true;
 
+      // não atira se ainda está no firerate cooldown
       if (jumpCooldown.current > 0) return;
 
-      // por enquanto ainda usa JUMP_FORCE
-      // depois troca por selectedWeapon.impact + firerate
+      // não atira se está recarregando
+      if (isReloadingRef.current) return;
+
+      // sem munição → inicia reload
+      if (ammoRef.current <= 0) {
+        isReloadingRef.current = true;
+        reloadTimerRef.current = selectedWeapon
+          ? selectedWeapon.reload
+          : 1000;
+        return;
+      }
+
+      // atira
       const recoil = selectedWeapon ? selectedWeapon.impact : JUMP_FORCE;
       const cooldown = selectedWeapon ? selectedWeapon.firerate : 2000;
 
       speed.current = recoil;
       jumpCooldown.current = cooldown;
+      ammoRef.current -= 1;
+
+      // se esvaziou o pente, já agenda o reload
+      if (ammoRef.current <= 0) {
+        isReloadingRef.current = true;
+        reloadTimerRef.current = selectedWeapon
+          ? selectedWeapon.reload
+          : 1000;
+      }
 
       momentum.current = Math.min(
         momentum.current + MOMENTUM_GAIN,
