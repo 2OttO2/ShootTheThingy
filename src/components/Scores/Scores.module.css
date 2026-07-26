@@ -1,0 +1,84 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.box {
+  background: #111;
+  border: 3px solid #fff;
+  border-radius: 16px;
+  padding: 40px 48px;
+  text-align: center;
+  color: white;
+  min-width: 340px;
+  max-width: 420px;
+  width: 90%;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 2.2rem;
+}
+
+.subtitle {
+  margin: 0 0 24px;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.empty {
+  color: #666;
+  margin: 24px 0 32px;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 28px;
+  text-align: left;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #222;
+  font-size: 1rem;
+}
+
+.rank {
+  width: 36px;
+  color: #888;
+  font-weight: bold;
+}
+
+.weapon {
+  flex: 1;
+  color: #ccc;
+}
+
+.distance {
+  font-weight: bold;
+  font-size: 1.15rem;
+}
+
+.back {
+  background: transparent;
+  border: 2px solid #555;
+  color: #ccc;
+  padding: 10px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.back:hover {
+  background: #222;
+  border-color: #888;
+}

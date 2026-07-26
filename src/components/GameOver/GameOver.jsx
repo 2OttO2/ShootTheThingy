@@ -1,6 +1,6 @@
 import styles from "./GameOver.module.css";
 
-function GameOver({ distance, onRestart }) {
+function GameOver({ distance, onRestart, onMenu }) {
   return (
     <div className={styles.overlay}>
       <div className={styles.box}>
@@ -16,7 +16,13 @@ function GameOver({ distance, onRestart }) {
           Reiniciar
         </button>
 
-        <p className={styles.hint}>ou aperte ESPAÇO</p>
+        {onMenu && (
+          <button className={styles.menuButton} onClick={onMenu}>
+            Menu
+          </button>
+        )}
+
+        <p className={styles.hint}>ou aperte ESPAÇO pra reiniciar</p>
       </div>
     </div>
   );

@@ -7,6 +7,9 @@ import Ground from "./components/Ground/Ground.jsx";
 import DebugHitboxes from "./utils/DebugHitboxes.jsx";
 import GameOver from "./components/GameOver/GameOver.jsx";
 import Distance from "./components/Distance/Distance.jsx";
+import Menu from "./components/Menu/Menu.jsx";
+import WeaponSelect from "./components/WeaponSelect/WeaponSelect.jsx";
+import Scores, { saveScore } from "./components/Scores/Scores.jsx";
 
 import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
@@ -24,9 +27,18 @@ import {
   BOUNCE,
   TETO_HEIGHT,
   GROUND_HEIGHT,
+  WEAPONS,
 } from "./constants/game.js";
 
 import "./App.css";
+
+const GAME_STATE = {
+  MENU: "menu",
+  WEAPON_SELECT: "weapon_select",
+  PLAYING: "playing",
+  DEAD: "dead",
+  SCORES: "scores",
+};
 
 function App() {
   // debug
@@ -36,10 +48,13 @@ function App() {
   const [distance, setDistance] = useState(0);
   const distanceRef = useRef(0);
 
-  // game state
-  const GAME_STATE = { PLAYING: "playing", DEAD: "dead" };
-  const [gameState, setGameState] = useState(GAME_STATE.PLAYING);
+  // game state — começa no MENU
+  const [gameState, setGameState] = useState(GAME_STATE.MENU);
   const isDeadRef = useRef(false);
+
+  // arma selecionada
+  const [selectedWeaponId, setSelectedWeaponId] = useState(null);
+  const selectedWeapon = selectedWeaponId ? WEAPONS[selectedWeaponId] : null;
 
   const gameSpeed = useRef(BASE_GAME_SPEED);
   const momentum = useRef(0);
@@ -71,27 +86,61 @@ function App() {
   const teto = TETO_HEIGHT;
   const floor = window.innerHeight - GROUND_HEIGHT - PLAYER_SIZE;
 
-  function resetGame() {
+  // =====================
+  // NAVEGAÇÃO
+  // =====================
+  function goToMenu() {
+    isDeadRef.current = true; // para o loop
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+    setGameState(GAME_STATE.MENU);
+  }
+
+  function goToWeaponSelect() {
+    setGameState(GAME_STATE.WEAPON_SELECT);
+  }
+
+  function goToScores() {
+    setGameState(GAME_STATE.SCORES);
+  }
+
+  function startGame(weaponId) {
+    setSelectedWeaponId(weaponId);
     isDeadRef.current = false;
     setGameState(GAME_STATE.PLAYING);
 
     resetPlayer();
-
     momentum.current = 0;
     gameSpeed.current = BASE_GAME_SPEED;
     distanceRef.current = 0;
     setDistance(0);
-
     resetSpikes();
-
     lastTime.current = 0;
+
+    animationRef.current = requestAnimationFrame(gameLoop);
+  }
+
+  function resetGame() {
+    // reinicia com a mesma arma
+    isDeadRef.current = false;
+    setGameState(GAME_STATE.PLAYING);
+
+    resetPlayer();
+    momentum.current = 0;
+    gameSpeed.current = BASE_GAME_SPEED;
+    distanceRef.current = 0;
+    setDistance(0);
+    resetSpikes();
+    lastTime.current = 0;
+
     animationRef.current = requestAnimationFrame(gameLoop);
   }
 
   // =====================
   // GAME LOOP
   // =====================
-
   const gameLoop = (time) => {
     if (isDeadRef.current) return;
 
@@ -141,7 +190,7 @@ function App() {
       speed.current *= -BOUNCE;
     }
 
-    // jump cooldown
+    // jump cooldown (depois vira firerate da arma)
     if (jumpCooldown.current > 0) {
       jumpCooldown.current -= deltaTime;
       if (jumpCooldown.current < 0) {
@@ -164,7 +213,13 @@ function App() {
     if (collided) {
       isDeadRef.current = true;
       setGameState(GAME_STATE.DEAD);
+
+      // salva score
+      const weaponName = selectedWeapon ? selectedWeapon.name : "—";
+      saveScore(Math.floor(distanceRef.current), weaponName);
+
       console.log("colidi papi");
+      return;
     }
 
     setDrawY(playerY.current);
@@ -172,20 +227,35 @@ function App() {
     animationRef.current = requestAnimationFrame(gameLoop);
   };
 
+  // não inicia o loop automaticamente — só quando for PLAYING
   useEffect(() => {
-    animationRef.current = requestAnimationFrame(gameLoop);
-    return () => cancelAnimationFrame(animationRef.current);
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
   }, []);
 
+  // input
   useEffect(() => {
     const keyDown = (e) => {
       if (e.code !== "Space") return;
+
+      // no menu / seleção / scores → não faz nada com espaço por enquanto
+      if (
+        gameState === GAME_STATE.MENU ||
+        gameState === GAME_STATE.WEAPON_SELECT ||
+        gameState === GAME_STATE.SCORES
+      ) {
+        return;
+      }
 
       if (gameState === GAME_STATE.DEAD) {
         resetGame();
         return;
       }
 
+      // PLAYING
       e.preventDefault();
 
       if (spaceHeld.current) return;
@@ -193,8 +263,13 @@ function App() {
 
       if (jumpCooldown.current > 0) return;
 
-      speed.current = JUMP_FORCE;
-      jumpCooldown.current = 2000;
+      // por enquanto ainda usa JUMP_FORCE
+      // depois troca por selectedWeapon.impact + firerate
+      const recoil = selectedWeapon ? selectedWeapon.impact : JUMP_FORCE;
+      const cooldown = selectedWeapon ? selectedWeapon.firerate : 2000;
+
+      speed.current = recoil;
+      jumpCooldown.current = cooldown;
 
       momentum.current = Math.min(
         momentum.current + MOMENTUM_GAIN,
@@ -215,36 +290,57 @@ function App() {
       window.removeEventListener("keydown", keyDown);
       window.removeEventListener("keyup", keyUp);
     };
-  }, [gameState]);
+  }, [gameState, selectedWeapon]);
 
+  // =====================
+  // RENDER
+  // =====================
   return (
     <div className="game">
-      <Teto />
+      {/* telas de UI */}
+      {gameState === GAME_STATE.MENU && (
+        <Menu onStart={goToWeaponSelect} onScores={goToScores} />
+      )}
 
-      {gameState === GAME_STATE.DEAD && <GameOver
-      distance={distance}
-      onRestart={resetGame}
-      />}
+      {gameState === GAME_STATE.WEAPON_SELECT && (
+        <WeaponSelect
+          onSelect={startGame}
+          onBack={goToMenu}
+        />
+      )}
 
-      <Distance distance={distance} />
+      {gameState === GAME_STATE.SCORES && (
+        <Scores onBack={goToMenu} />
+      )}
 
-      <Player drawY={drawY} />
+      {gameState === GAME_STATE.DEAD && (
+        <GameOver
+          distance={distance}
+          onRestart={resetGame}
+          onMenu={goToMenu}
+        />
+      )}
 
-      <Spikes
-        x={spikes.top.x}
-        side="top"
-        amount={spikes.top.amount}
-      />
-
-      <Spikes
-        x={spikes.bottom.x}
-        side="bottom"
-        amount={spikes.bottom.amount}
-      />
-
-      <DebugHitboxes hitboxes={debugHitboxes} />
-
-      <Ground />
+      {/* elementos do jogo (sempre montados, mas só atualizam quando PLAYING) */}
+      {(gameState === GAME_STATE.PLAYING || gameState === GAME_STATE.DEAD) && (
+        <>
+          <Teto />
+          <Distance distance={distance} />
+          <Player drawY={drawY} />
+          <Spikes
+            x={spikes.top.x}
+            side="top"
+            amount={spikes.top.amount}
+          />
+          <Spikes
+            x={spikes.bottom.x}
+            side="bottom"
+            amount={spikes.bottom.amount}
+          />
+          <DebugHitboxes hitboxes={debugHitboxes} />
+          <Ground />
+        </>
+      )}
     </div>
   );
 }

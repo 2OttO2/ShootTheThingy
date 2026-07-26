@@ -73,6 +73,25 @@
   transform: scale(0.97);
 }
 
+.menuButton {
+  display: block;
+  margin: 12px auto 0;
+  background: transparent;
+  color: #aaa;
+  border: 2px solid #555;
+  padding: 10px 28px;
+  font-size: 0.95rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.menuButton:hover {
+  background: #222;
+  border-color: #888;
+  color: #fff;
+}
+
 .hint {
   margin: 16px 0 0;
   font-size: 0.8rem;
