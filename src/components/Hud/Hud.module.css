@@ -29,6 +29,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: visible;
 }
 
 .weaponSprite {
@@ -39,49 +40,67 @@
   image-rendering: pixelated;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
   transform: scaleX(-1);
-  transform-origin: 70% 60%;
-  transition: transform 0.08s ease-out;
+  transform-origin: center center;
+  will-change: transform;
 }
 
+/* recoil via keyframes — não troca o transform base, só anima por cima */
 .weaponRecoil {
-  transition: transform 0.05s ease-out;
+  animation: weaponKick 0.13s ease-out;
 }
 
-/* flash na ponta (esquerda, por causa do scaleX(-1)) */
+@keyframes weaponKick {
+  0% {
+    transform: scaleX(-1) rotate(0deg) translateX(0);
+  }
+  35% {
+    transform: scaleX(-1) rotate(var(--kick, 8deg)) translateX(3px);
+  }
+  100% {
+    transform: scaleX(-1) rotate(0deg) translateX(0);
+  }
+}
+
+/* flash sempre absolute — nunca entra no fluxo / não empurra a arma */
 .muzzleFlash {
   position: absolute;
-  left: -2px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
+  right: 20px;
+  top: 25%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
   border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
   background: radial-gradient(
     circle,
     #fff 0%,
-    #ffe566 30%,
+    #ffe566 28%,
     #ff9800 55%,
-    transparent 70%
+    transparent 72%
   );
   box-shadow:
-    0 0 8px 3px rgba(255, 200, 50, 0.7),
-    0 0 16px 6px rgba(255, 120, 0, 0.35);
-  animation: flashPop 0.07s ease-out;
-  pointer-events: none;
+    0 0 6px 2px rgba(255, 200, 50, 0.65),
+    0 0 14px 5px rgba(255, 120, 0, 0.3);
+}
+
+.muzzleFlashOn {
+  animation: flashPop 0.08s ease-out forwards;
 }
 
 @keyframes flashPop {
   0% {
     opacity: 0;
-    transform: translateY(-50%) scale(0.4);
+    transform: scale(0.35);
   }
-  40% {
+  45% {
     opacity: 1;
-    transform: translateY(-50%) scale(1.15);
+    transform: scale(1.2);
   }
   100% {
-    opacity: 0.85;
-    transform: translateY(-50%) scale(1);
+    opacity: 0;
+    transform: scale(0.9);
   }
 }
 
@@ -162,12 +181,10 @@
   opacity: 1;
 }
 
-/* bala que salta pra fora do HUD */
+/* bala ejetada — left vem do JS (slot que sumiu) */
 .ejectedBullet {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  height: 24px;
+  height: 22px;
   width: auto;
   object-fit: contain;
   image-rendering: pixelated;
@@ -177,17 +194,18 @@
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
 }
 
+
 @keyframes ejectBullet {
   0% {
     opacity: 1;
     transform: translate(0, 0) rotate(0deg) scale(1);
   }
-  40% {
+  35% {
     opacity: 1;
-    transform: translate(18px, -36px) rotate(25deg) scale(1.15);
+    transform: translate(10px, -28px) rotate(20deg) scale(1.1);
   }
   100% {
     opacity: 0;
-    transform: translate(40px, -70px) rotate(55deg) scale(0.85);
+    transform: translate(28px, -60px) rotate(50deg) scale(0.8);
   }
 }

@@ -25,7 +25,6 @@ const BULLET_IMG = {
   sniper: bulletSniper,
 };
 
-// intensidade do kick por arma (graus)
 const RECOIL_DEG = {
   pistol: 8,
   sub: 5,
@@ -36,28 +35,41 @@ const RECOIL_DEG = {
 function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
   const [recoiling, setRecoiling] = useState(false);
   const [flash, setFlash] = useState(false);
-  const [ejected, setEjected] = useState([]); // { id, src }
+  const [ejected, setEjected] = useState([]); // { id, src, left, bottom }
   const lastTick = useRef(0);
   const ejectId = useRef(0);
+  const bulletRefs = useRef([]);
+  const bulletsBoxRef = useRef(null);
 
   useEffect(() => {
     if (!weapon || shotTick === 0 || shotTick === lastTick.current) return;
     lastTick.current = shotTick;
 
-    // recoil + flash
     setRecoiling(true);
     setFlash(true);
 
-    const recoilMs = weapon.id === "sub" ? 80 : 120;
-    const flashMs = weapon.id === "sub" ? 50 : 70;
+    const recoilMs = weapon.id === "sub" ? 90 : 130;
+    const flashMs = weapon.id === "sub" ? 55 : 75;
 
     const t1 = setTimeout(() => setRecoiling(false), recoilMs);
     const t2 = setTimeout(() => setFlash(false), flashMs);
 
-    // bala saltando do HUD
+    // slot que acabou de ser gasto = índice `ammo`
+    // (ammo já foi decrementado no App antes do shotTick)
+    const spentIndex = Math.max(0, ammo);
+    const slotEl = bulletRefs.current[spentIndex];
+    const boxEl = bulletsBoxRef.current;
+
+    let left = 10;
+    let bottom = 6;
+    if (slotEl && boxEl) {
+      left = slotEl.offsetLeft;
+      bottom = boxEl.clientHeight - slotEl.offsetTop - slotEl.offsetHeight;
+    }
+
     const id = ++ejectId.current;
     const src = BULLET_IMG[weapon.id] || bulletPistol;
-    setEjected((prev) => [...prev, { id, src }]);
+    setEjected((prev) => [...prev, { id, src, left, bottom }]);
     const t3 = setTimeout(() => {
       setEjected((prev) => prev.filter((b) => b.id !== id));
     }, 450);
@@ -67,7 +79,7 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
       clearTimeout(t2);
       clearTimeout(t3);
     };
-  }, [shotTick, weapon]);
+  }, [shotTick, weapon, ammo]);
 
   if (!weapon) return null;
 
@@ -85,16 +97,17 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
             className={`${styles.weaponSprite} ${
               recoiling ? styles.weaponRecoil : ""
             }`}
-            style={
-              recoiling
-                ? { transform: `scaleX(-1) rotate(${kick}deg)` }
-                : undefined
-            }
+            style={{ "--kick": `${kick}deg` }}
             src={weaponSrc}
             alt={weapon.name}
             draggable={false}
           />
-          {flash && <span className={styles.muzzleFlash} />}
+          <span
+            className={`${styles.muzzleFlash} ${
+              flash ? styles.muzzleFlashOn : ""
+            }`}
+            aria-hidden
+          />
         </div>
 
         <div className={styles.weaponInfo}>
@@ -115,13 +128,16 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
         </div>
       </div>
 
-      <div className={styles.bullets}>
+      <div className={styles.bullets} ref={bulletsBoxRef}>
         {Array.from({ length: slots }).map((_, i) => {
           const filledUpTo = Math.ceil((ammo / max) * slots);
           const filled = i < filledUpTo;
           return (
             <img
               key={i}
+              ref={(el) => {
+                bulletRefs.current[i] = el;
+              }}
               className={`${styles.bullet} ${
                 filled ? styles.bulletFilled : styles.bulletEmpty
               }`}
@@ -132,11 +148,11 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
           );
         })}
 
-        {/* balas ejetadas animadas */}
         {ejected.map((b) => (
           <img
             key={b.id}
             className={styles.ejectedBullet}
+            style={{ left: b.left, bottom: b.bottom }}
             src={b.src}
             alt=""
             draggable={false}
