@@ -10,6 +10,7 @@ import Distance from "./components/Distance/Distance.jsx";
 import Menu from "./components/Menu/Menu.jsx";
 import WeaponSelect from "./components/WeaponSelect/WeaponSelect.jsx";
 import Scores, { saveScore } from "./components/Scores/Scores.jsx";
+import Hud from "./components/Hud/Hud.jsx";
 
 import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
@@ -41,6 +42,14 @@ const GAME_STATE = {
 };
 
 function App() {
+  
+  //munição / reload 
+  const ammoRef = useRef(0);
+  const isReloadingRef = useRef(false);
+  const reloadTimerRef = useRef(0);
+  const [ammo, setAmmo] = useState(0);
+  const [isReloading, setIsReloading] = useState(false);
+
   // debug
   const [debugHitboxes, setDebugHitboxes] = useState([]);
 
@@ -84,10 +93,6 @@ function App() {
   const animationRef = useRef(null);
   const lastTime = useRef(0);
 
-  // munição / reload
-  const ammoRef = useRef(0);
-  const isReloadingRef = useRef(false);
-  const reloadTimerRef = useRef(0);
 
   // limites
   const teto = TETO_HEIGHT;
@@ -114,6 +119,16 @@ function App() {
   }
 
   function startGame(weaponId) {
+    
+    // reseta munição da arma escolhida
+    const weapon = WEAPONS[weaponId];
+    const mag = weapon ? weapon.magazine : 12;
+    ammoRef.current = mag;
+    setAmmo(mag);
+    isReloadingRef.current = false;
+    setIsReloading(false);
+    reloadTimerRef.current = 0;
+
     setSelectedWeaponId(weaponId);
     isDeadRef.current = false;
     setGameState(GAME_STATE.PLAYING);
@@ -125,12 +140,6 @@ function App() {
     setDistance(0);
     resetSpikes();
     lastTime.current = 0;
-
-    // reseta munição da arma escolhida
-    const weapon = WEAPONS[weaponId];
-    ammoRef.current = weapon ? weapon.magazine : 12;
-    isReloadingRef.current = false;
-    reloadTimerRef.current = 0;
 
     animationRef.current = requestAnimationFrame(gameLoop);
   }
@@ -149,6 +158,12 @@ function App() {
     lastTime.current = 0;
 
     // reseta munição
+    const mag = selectedWeapon ? selectedWeapon.magazine : 12;
+    ammoRef.current = mag;
+    setAmmo(mag);
+    isReloadingRef.current = false;
+    setIsReloading(false);
+    reloadTimerRef.current = 0;
     ammoRef.current = selectedWeapon ? selectedWeapon.magazine : 12;
     isReloadingRef.current = false;
     reloadTimerRef.current = 0;
@@ -221,9 +236,12 @@ function App() {
       reloadTimerRef.current -= deltaTime;
       if (reloadTimerRef.current <= 0) {
         isReloadingRef.current = false;
+        setIsReloading(false);
         reloadTimerRef.current = 0;
         const weapon = selectedWeaponRef.current;
-        ammoRef.current = weapon ? weapon.magazine : 12;
+        const mag = weapon ? weapon.magazine : 12;
+        ammoRef.current = mag;
+        setAmmo(mag);
       }
     }
 
@@ -299,6 +317,16 @@ function App() {
           : 1000;
         return;
       }
+      
+            // sem munição → inicia reload
+      if (ammoRef.current <= 0) {
+        isReloadingRef.current = true;
+        setIsReloading(true);
+        reloadTimerRef.current = selectedWeapon
+          ? selectedWeapon.reload
+          : 1000;
+        return;
+      }
 
       // atira
       const recoil = selectedWeapon ? selectedWeapon.impact : JUMP_FORCE;
@@ -307,10 +335,12 @@ function App() {
       speed.current = recoil;
       jumpCooldown.current = cooldown;
       ammoRef.current -= 1;
+      setAmmo(ammoRef.current);
 
       // se esvaziou o pente, já agenda o reload
       if (ammoRef.current <= 0) {
         isReloadingRef.current = true;
+        setIsReloading(true);
         reloadTimerRef.current = selectedWeapon
           ? selectedWeapon.reload
           : 1000;
@@ -345,6 +375,14 @@ function App() {
       {/* telas de UI */}
       {gameState === GAME_STATE.MENU && (
         <Menu onStart={goToWeaponSelect} onScores={goToScores} />
+      )}
+
+      {gameState === GAME_STATE.PLAYING && (
+        <Hud
+            weapon={selectedWeapon}
+            ammo={ammo}
+            isReloading={isReloading}
+        />
       )}
 
       {gameState === GAME_STATE.WEAPON_SELECT && (
