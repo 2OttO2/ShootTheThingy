@@ -28,7 +28,7 @@ export const WEAPONS = {
   pistol: {
     id: "pistol",
     name: "Pistola",
-    description: "Equilibrada. Boa pra começar.",
+    description: "Baixo impacto. Cadência alta.",
     impact: -12,
     firerate: 280,
     reload: 2000,
@@ -38,7 +38,7 @@ export const WEAPONS = {
   sub: {
     id: "sub",
     name: "Sub",
-    description: "Muito rápida, pouco impacto.",
+    description: "Pouco impacto, Cadência muito alta.",
     impact: -7,
     firerate: 90,
     reload: 3000,
@@ -48,7 +48,7 @@ export const WEAPONS = {
   shotgun: {
     id: "shotgun",
     name: "Escopeta",
-    description: "Impacto alto, cadência baixa.",
+    description: "Impacto médio, Cadência média.",
     impact: -22,
     firerate: 700,
     reload: 3000,
@@ -58,7 +58,7 @@ export const WEAPONS = {
   sniper: {
     id: "sniper",
     name: "Sniper",
-    description: "Impacto absurdo, bem lenta.",
+    description: "Impacto absurdo, Cadência baixa.",
     impact: -32,
     firerate: 1100,
     reload: 2000,

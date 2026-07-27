@@ -32,11 +32,15 @@ function WeaponSelect({ onSelect, onBack }) {
               style={{ borderColor: weapon.color }}
               onClick={() => onSelect(weapon.id)}
             >
-              <div className={styles.iconRow}>
-                <div
+              <div className={styles.titleRow}>
+                <span
                   className={styles.icon}
                   style={{ background: weapon.color }}
                 />
+                <h2 className={styles.name}>{weapon.name}</h2>
+              </div>
+
+              <div className={styles.weaponWrap}>
                 <img
                   className={styles.weaponImg}
                   src={WEAPON_IMG[weapon.id]}
@@ -44,7 +48,7 @@ function WeaponSelect({ onSelect, onBack }) {
                   draggable={false}
                 />
               </div>
-              <h2 className={styles.name}>{weapon.name}</h2>
+
               <p className={styles.desc}>{weapon.description}</p>
 
               <div className={styles.stats}>
