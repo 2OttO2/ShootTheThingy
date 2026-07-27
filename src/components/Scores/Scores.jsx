@@ -30,6 +30,7 @@ function Scores({ onBack }) {
             {scores.map((entry, i) => (
               <li key={i} className={styles.row}>
                 <span className={styles.rank}>#{i + 1}</span>
+                <span className={styles.name}>{entry.name || "Anônimo"}</span>
                 <span className={styles.weapon}>{entry.weapon || "—"}</span>
                 <span className={styles.distance}>{entry.distance}</span>
               </li>
@@ -48,10 +49,11 @@ function Scores({ onBack }) {
 export default Scores;
 
 // helper pra salvar score (pode ser chamado do App)
-export function saveScore(distance, weaponName) {
+export function saveScore(distance, weaponName, name) {
   try {
     const scores = getScores();
     scores.push({
+      name: name || "Anônimo",
       distance,
       weapon: weaponName,
       date: new Date().toISOString(),

@@ -243,12 +243,6 @@ function App() {
       isDeadRef.current = true;
       setGameState(GAME_STATE.DEAD);
 
-      // salva score
-      const weapon = selectedWeaponRef.current;
-      const weaponName = weapon ? weapon.name : "—";
-      saveScore(Math.floor(distanceRef.current), weaponName);
-
-      console.log("colidi papi");
       return;
     }
 
@@ -367,8 +361,10 @@ function App() {
       {gameState === GAME_STATE.DEAD && (
         <GameOver
           distance={distance}
+          weaponName={selectedWeapon ? selectedWeapon.name : "—"}
           onRestart={resetGame}
           onMenu={goToMenu}
+          onPostScore={(name, dist, weapon) => saveScore(dist, weapon, name)}
         />
       )}
 

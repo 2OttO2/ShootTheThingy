@@ -58,14 +58,28 @@
   font-weight: bold;
 }
 
-.weapon {
+.name {
   flex: 1;
-  color: #ccc;
+  color: #fff;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100px;
+}
+
+.weapon {
+  color: #888;
+  font-size: 0.9rem;
+  min-width: 70px;
+  text-align: right;
 }
 
 .distance {
   font-weight: bold;
   font-size: 1.15rem;
+  min-width: 60px;
+  text-align: right;
 }
 
 .back {

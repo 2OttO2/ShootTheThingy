@@ -52,6 +52,35 @@
   color: #fff;
 }
 
+.postArea {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.nameInput {
+  background: #1a1a1a;
+  border: 2px solid #555;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1.05rem;
+  padding: 10px 16px;
+  width: 100%;
+  max-width: 220px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.nameInput:focus {
+  border-color: #ff3333;
+}
+
+.nameInput::placeholder {
+  color: #555;
+}
+
 .button {
   background: #ff3333;
   color: white;
@@ -64,13 +93,26 @@
   transition: background 0.15s, transform 0.1s;
 }
 
-.button:hover {
+.button:hover:not(:disabled) {
   background: #ff5555;
   transform: scale(1.05);
 }
 
-.button:active {
+.button:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+.button:disabled {
+  background: #555;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.postedMsg {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+  color: #4caf50;
+  font-weight: bold;
 }
 
 .menuButton {
@@ -79,7 +121,7 @@
   background: transparent;
   color: #aaa;
   border: 2px solid #555;
-  padding: 12px 54px;
+  padding: 12px 69px;
   font-size: 0.95rem;
   border-radius: 8px;
   cursor: pointer;

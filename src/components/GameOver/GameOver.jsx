@@ -1,6 +1,28 @@
+import { useState } from "react";
 import styles from "./GameOver.module.css";
 
-function GameOver({ distance, onRestart, onMenu }) {
+function GameOver({ distance, weaponName, onRestart, onMenu, onPostScore }) {
+  const [name, setName] = useState("");
+  const [posted, setPosted] = useState(false);
+
+  function handlePost() {
+    const trimmed = name.trim();
+    if (!trimmed || posted) return;
+    onPostScore(trimmed, distance, weaponName);
+    setPosted(true);
+  }
+
+  function handleKeyDown(e) {
+    // não deixa o espaço reiniciar enquanto digita o nome
+    if (e.code === "Space") {
+      e.stopPropagation();
+    }
+    if (e.code === "Enter") {
+      e.preventDefault();
+      handlePost();
+    }
+  }
+
   return (
     <div className={styles.overlay}>
       <div className={styles.box}>
@@ -12,9 +34,29 @@ function GameOver({ distance, onRestart, onMenu }) {
           <span className={styles.scoreValue}>{distance}</span>
         </div>
 
-        <button className={styles.button} onClick={onRestart}>
-          Reiniciar
-        </button>
+        {!posted ? (
+          <div className={styles.postArea}>
+            <input
+              className={styles.nameInput}
+              type="text"
+              maxLength={12}
+              placeholder="seu nome"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={handleKeyDown}
+              autoFocus
+            />
+            <button
+              className={styles.button}
+              onClick={handlePost}
+              disabled={!name.trim()}
+            >
+              Postar Score
+            </button>
+          </div>
+        ) : (
+          <p className={styles.postedMsg}>score postado!</p>
+        )}
 
         {onMenu && (
           <button className={styles.menuButton} onClick={onMenu}>
