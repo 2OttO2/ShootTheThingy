@@ -1,36 +1,47 @@
 import styles from "./Hud.module.css";
 
-const BULLET_CLASS = {
-  pistol: styles.bulletPistol,
-  sub: styles.bulletSub,
-  shotgun: styles.bulletShotgun,
-  sniper: styles.bulletSniper,
+import weaponPistol from "../../assets/weapons/pistol.png";
+import weaponSub from "../../assets/weapons/sub.png";
+import weaponShotgun from "../../assets/weapons/shotgun.png";
+import weaponSniper from "../../assets/weapons/sniper.png";
+
+import bulletPistol from "../../assets/bullets/pistol.png";
+import bulletSub from "../../assets/bullets/sub.png";
+import bulletShotgun from "../../assets/bullets/shotgun.png";
+import bulletSniper from "../../assets/bullets/sniper.png";
+
+const WEAPON_IMG = {
+  pistol: weaponPistol,
+  sub: weaponSub,
+  shotgun: weaponShotgun,
+  sniper: weaponSniper,
 };
 
-const WEAPON_CLASS = {
-  pistol: styles.weaponPistol,
-  sub: styles.weaponSub,
-  shotgun: styles.weaponShotgun,
-  sniper: styles.weaponSniper,
+const BULLET_IMG = {
+  pistol: bulletPistol,
+  sub: bulletSub,
+  shotgun: bulletShotgun,
+  sniper: bulletSniper,
 };
 
 function Hud({ weapon, ammo, isReloading }) {
   if (!weapon) return null;
 
   const max = weapon.magazine;
-  const bulletClass = BULLET_CLASS[weapon.id] || styles.bulletPistol;
-  const weaponClass = WEAPON_CLASS[weapon.id] || styles.weaponPistol;
+  const weaponSrc = WEAPON_IMG[weapon.id] || weaponPistol;
+  const bulletSrc = BULLET_IMG[weapon.id] || bulletPistol;
 
-  // quantos "slots" de munição mostrar (limita visualmente se o pente for grande)
+  // quantos slots visuais (limita se o pente for grande)
   const slots = Math.min(max, 24);
 
   return (
     <div className={styles.hud}>
       <div className={styles.weaponBlock}>
-        <div
-          className={`${styles.weaponSprite} ${weaponClass}`}
-          style={{ borderColor: weapon.color }}
-          title={weapon.name}
+        <img
+          className={styles.weaponSprite}
+          src={weaponSrc}
+          alt={weapon.name}
+          draggable={false}
         />
         <div className={styles.weaponInfo}>
           <span className={styles.weaponName} style={{ color: weapon.color }}>
@@ -52,15 +63,17 @@ function Hud({ weapon, ammo, isReloading }) {
 
       <div className={styles.bullets}>
         {Array.from({ length: slots }).map((_, i) => {
-          // mapeia slots visuais para a munição real (pente grande = alguns slots representam mais de 1)
           const filledUpTo = Math.ceil((ammo / max) * slots);
           const filled = i < filledUpTo;
           return (
-            <span
+            <img
               key={i}
-              className={`${styles.bullet} ${bulletClass} ${
+              className={`${styles.bullet} ${
                 filled ? styles.bulletFilled : styles.bulletEmpty
               }`}
+              src={bulletSrc}
+              alt=""
+              draggable={false}
             />
           );
         })}

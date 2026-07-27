@@ -21,117 +21,14 @@
   backdrop-filter: blur(4px);
 }
 
-/* =====================
-   SPRITES DAS ARMAS
-   ===================== */
-
 .weaponSprite {
-  width: 56px;
-  height: 28px;
-  position: relative;
+  height: 40px;
+  width: auto;
+  max-width: 110px;
+  object-fit: contain;
+  image-rendering: pixelated;
   flex-shrink: 0;
-  border-bottom: 2px solid;
-}
-
-/* Pistola — cano curto + cabo */
-.weaponPistol::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 10px;
-  width: 28px;
-  height: 8px;
-  background: #c9a227;
-  border-radius: 2px 4px 4px 2px;
-  box-shadow: 0 0 0 1px #8a7018;
-}
-
-.weaponPistol::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 16px;
-  width: 10px;
-  height: 12px;
-  background: #8b6914;
-  border-radius: 0 0 3px 3px;
-  transform: skewX(-8deg);
-}
-
-/* Sub — cano médio + carregador */
-.weaponSub::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 8px;
-  width: 42px;
-  height: 7px;
-  background: #27ae60;
-  border-radius: 2px 5px 5px 2px;
-  box-shadow: 0 0 0 1px #1e8449;
-}
-
-.weaponSub::after {
-  content: "";
-  position: absolute;
-  left: 14px;
-  top: 14px;
-  width: 8px;
-  height: 14px;
-  background: #1e8449;
-  border-radius: 0 0 2px 2px;
-}
-
-/* Escopeta — cano duplo largo */
-.weaponShotgun::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
-  width: 48px;
-  height: 10px;
-  background: #d35400;
-  border-radius: 2px 6px 6px 2px;
-  box-shadow:
-    0 0 0 1px #a04000,
-    inset 0 -3px 0 #e67e22;
-}
-
-.weaponShotgun::after {
-  content: "";
-  position: absolute;
-  left: 6px;
-  top: 15px;
-  width: 14px;
-  height: 12px;
-  background: #a04000;
-  border-radius: 0 0 4px 2px;
-  transform: skewX(-12deg);
-}
-
-/* Sniper — cano longo fino */
-.weaponSniper::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 10px;
-  width: 52px;
-  height: 5px;
-  background: #c0392b;
-  border-radius: 1px 4px 4px 1px;
-  box-shadow: 0 0 0 1px #922b21;
-}
-
-.weaponSniper::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  top: 4px;
-  width: 14px;
-  height: 6px;
-  background: #7f8c8d;
-  border-radius: 2px;
-  box-shadow: inset 0 0 0 1px #566;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
 }
 
 .weaponInfo {
@@ -181,22 +78,22 @@
   }
 }
 
-/* =====================
-   SPRITES DAS BALAS
-   ===================== */
-
 .bullets {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  max-width: 220px;
+  align-items: flex-end;
+  gap: 3px;
+  max-width: 240px;
   background: rgba(0, 0, 0, 0.45);
   border-radius: 8px;
   padding: 8px 10px;
 }
 
 .bullet {
-  display: inline-block;
+  height: 22px;
+  width: auto;
+  object-fit: contain;
+  image-rendering: pixelated;
   transition: opacity 0.12s, transform 0.12s;
 }
 
@@ -207,77 +104,4 @@
 
 .bulletFilled {
   opacity: 1;
-}
-
-/* Pistola — bala clássica redonda com ponta */
-.bulletPistol {
-  width: 8px;
-  height: 14px;
-  background: linear-gradient(180deg, #f1c40f 40%, #c9a227 100%);
-  border-radius: 3px 3px 2px 2px;
-  box-shadow: inset 0 -2px 0 #8a7018;
-  position: relative;
-}
-
-.bulletPistol::before {
-  content: "";
-  position: absolute;
-  top: -3px;
-  left: 1px;
-  width: 6px;
-  height: 5px;
-  background: #e8d48b;
-  border-radius: 50% 50% 20% 20%;
-}
-
-/* Sub — balas menores e mais compactas */
-.bulletSub {
-  width: 6px;
-  height: 11px;
-  background: linear-gradient(180deg, #2ecc71 35%, #1e8449 100%);
-  border-radius: 2px 2px 1px 1px;
-  box-shadow: inset 0 -1px 0 #145a32;
-}
-
-/* Escopeta — cartucho/shell */
-.bulletShotgun {
-  width: 10px;
-  height: 16px;
-  background: linear-gradient(180deg, #e67e22 45%, #a04000 45%, #a04000 100%);
-  border-radius: 2px 2px 1px 1px;
-  box-shadow: inset 0 0 0 1px #7b2d00;
-  position: relative;
-}
-
-.bulletShotgun::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 5px;
-  background: #f5cba7;
-  border-radius: 2px 2px 0 0;
-}
-
-/* Sniper — bala longa pontuda */
-.bulletSniper {
-  width: 6px;
-  height: 18px;
-  background: linear-gradient(180deg, #e74c3c 30%, #922b21 100%);
-  border-radius: 50% 50% 1px 1px;
-  box-shadow: inset 0 -2px 0 #6b1a14;
-  position: relative;
-}
-
-.bulletSniper::before {
-  content: "";
-  position: absolute;
-  top: -4px;
-  left: 1px;
-  width: 4px;
-  height: 6px;
-  background: #f5b7b1;
-  border-radius: 50% 50% 10% 10%;
-  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
 }
