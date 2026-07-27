@@ -44,7 +44,6 @@
   will-change: transform;
 }
 
-/* recoil via keyframes — não troca o transform base, só anima por cima */
 .weaponRecoil {
   animation: weaponKick 0.13s ease-out;
 }
@@ -61,47 +60,219 @@
   }
 }
 
-/* flash sempre absolute — nunca entra no fluxo / não empurra a arma */
+/* flash na ponta DIREITA (cano) — absolute, não empurra a arma */
 .muzzleFlash {
   position: absolute;
   right: 20px;
   top: 25%;
-  width: 16px;
-  height: 16px;
-  margin-top: -8px;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
   pointer-events: none;
-  z-index: 2;
+  z-index: -2;
   opacity: 0;
-  background: radial-gradient(
-    circle,
-    #fff 0%,
-    #ffe566 28%,
-    #ff9800 55%,
-    transparent 72%
-  );
-  box-shadow:
-    0 0 6px 2px rgba(255, 200, 50, 0.65),
-    0 0 14px 5px rgba(255, 120, 0, 0.3);
 }
 
 .muzzleFlashOn {
-  animation: flashPop 0.08s ease-out forwards;
+  animation: flashPop 0.12s ease-out forwards;
 }
 
 @keyframes flashPop {
   0% {
     opacity: 0;
-    transform: scale(0.35);
+    transform: scale(0.3) rotate(0deg);
   }
-  45% {
+  30% {
     opacity: 1;
-    transform: scale(1.2);
+    transform: scale(1.25) rotate(8deg);
   }
   100% {
     opacity: 0;
-    transform: scale(0.9);
+    transform: scale(0.7) rotate(-4deg);
   }
+}
+
+/* núcleo branco quente */
+.flashCore {
+  position: absolute;
+  inset: 30%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, #ffe566 40%, transparent 75%);
+  box-shadow:
+    0 0 6px 2px rgba(255, 255, 200, 0.9),
+    0 0 14px 4px rgba(255, 160, 40, 0.55);
+}
+
+/* cruz / estrela de fogo */
+.flashStar {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 42%, #ffec80 48%, #fff 50%, #ffec80 52%, transparent 58%),
+    linear-gradient(0deg, transparent 42%, #ff9800 48%, #ffe566 50%, #ff9800 52%, transparent 58%);
+  filter: blur(0.3px);
+  opacity: 0.95;
+}
+
+.flashStar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(45deg, transparent 44%, #ffb347 49%, #fff 50%, #ffb347 51%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, #ff9800 49%, #ffe566 50%, #ff9800 51%, transparent 56%);
+  opacity: 0.85;
+}
+
+/* faíscas */
+.flashSpark,
+.flashSpark2,
+.flashSpark3 {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff6a0;
+  box-shadow: 0 0 4px 1px rgba(255, 180, 50, 0.8);
+}
+
+.muzzleFlashOn .flashSpark {
+  animation: spark1 0.12s ease-out forwards;
+}
+.muzzleFlashOn .flashSpark2 {
+  animation: spark2 0.12s ease-out forwards;
+}
+.muzzleFlashOn .flashSpark3 {
+  animation: spark3 0.12s ease-out forwards;
+}
+
+@keyframes spark1 {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(10px, -8px) scale(0.3); }
+}
+@keyframes spark2 {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(12px, 4px) scale(0.2); }
+}
+@keyframes spark3 {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(6px, 10px) scale(0.25); }
+}
+
+.flashSpark { top: 40%; left: 55%; }
+.flashSpark2 { top: 50%; left: 60%; }
+.flashSpark3 { top: 60%; left: 50%; }
+
+/* ===== FLASH POR ARMA ===== */
+
+/* Pistola — clássico amarelo/laranja, médio */
+.flash_pistol {
+  width: 26px;
+  height: 26px;
+  margin-top: -13px;
+  right: 20px;
+  top: 25%;
+}
+.flash_pistol .flashCore {
+  background: radial-gradient(circle, #fff 0%, #ffe566 40%, transparent 75%);
+  box-shadow:
+    0 0 6px 2px rgba(255, 255, 200, 0.9),
+    0 0 12px 4px rgba(255, 160, 40, 0.5);
+}
+.flash_pistol .flashStar {
+  background:
+    linear-gradient(90deg, transparent 42%, #ffec80 48%, #fff 50%, #ffec80 52%, transparent 58%),
+    linear-gradient(0deg, transparent 42%, #ff9800 48%, #ffe566 50%, #ff9800 52%, transparent 58%);
+}
+
+/* Sub — menor, rápido, tom esverdeado */
+.flash_sub {
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  right: 18px;
+  top: 28%;
+}
+.flash_sub .flashCore {
+  background: radial-gradient(circle, #fff 0%, #b8f5c4 45%, transparent 75%);
+  box-shadow:
+    0 0 4px 1px rgba(200, 255, 210, 0.85),
+    0 0 10px 3px rgba(80, 220, 120, 0.4);
+}
+.flash_sub .flashStar {
+  background:
+    linear-gradient(90deg, transparent 44%, #c8ffd0 49%, #fff 50%, #c8ffd0 51%, transparent 56%),
+    linear-gradient(0deg, transparent 44%, #2ecc71 49%, #a8f0b8 50%, #2ecc71 51%, transparent 56%);
+}
+.flash_sub .flashSpark,
+.flash_sub .flashSpark2,
+.flash_sub .flashSpark3 {
+  background: #d4ffe0;
+  box-shadow: 0 0 3px 1px rgba(100, 230, 140, 0.7);
+  width: 2px;
+  height: 2px;
+}
+
+/* Escopeta — grande, espalhado, laranja/vermelho */
+.flash_shotgun {
+  width: 38px;
+  height: 34px;
+  margin-top: -17px;
+  /* sprite mais longo — cano mais à esquerda do stage */
+  left:auto;
+  right: -15px;
+  top: 30%;
+}
+.flash_shotgun .flashCore {
+  inset: 22%;
+  background: radial-gradient(circle, #fff 0%, #ffb347 35%, #ff5722 60%, transparent 78%);
+  box-shadow:
+    0 0 10px 4px rgba(255, 200, 100, 0.95),
+    0 0 20px 8px rgba(255, 100, 30, 0.55);
+}
+.flash_shotgun .flashStar {
+  background:
+    linear-gradient(90deg, transparent 38%, #ffcc66 46%, #fff 50%, #ffcc66 54%, transparent 62%),
+    linear-gradient(0deg, transparent 38%, #ff5722 46%, #ff9800 50%, #ff5722 54%, transparent 62%);
+  filter: blur(0.5px);
+}
+.flash_shotgun .flashSpark,
+.flash_shotgun .flashSpark2,
+.flash_shotgun .flashSpark3 {
+  width: 4px;
+  height: 4px;
+  background: #ffd080;
+  box-shadow: 0 0 5px 2px rgba(255, 120, 40, 0.85);
+}
+
+/* Sniper — alongado, branco/azul frio, preciso */
+.flash_sniper {
+  width: 32px;
+  height: 20px;
+  margin-top: -10px;
+  /* cano longo — ponta bem à esquerda */
+  right: auto;
+  right: -15px;
+  top: 40%;
+}
+.flash_sniper .flashCore {
+  inset: 25% 15%;
+  border-radius: 40%;
+  background: radial-gradient(circle, #fff 0%, #e0f0ff 40%, #90caf9 65%, transparent 80%);
+  box-shadow:
+    0 0 8px 3px rgba(220, 240, 255, 0.95),
+    0 0 16px 6px rgba(100, 180, 255, 0.45);
+}
+.flash_sniper .flashStar {
+  background:
+    linear-gradient(90deg, transparent 30%, #b3e5fc 45%, #fff 50%, #b3e5fc 55%, transparent 70%),
+    linear-gradient(0deg, transparent 46%, #64b5f6 49%, #e3f2fd 50%, #64b5f6 51%, transparent 54%);
+}
+.flash_sniper .flashSpark,
+.flash_sniper .flashSpark2,
+.flash_sniper .flashSpark3 {
+  background: #e3f2fd;
+  box-shadow: 0 0 4px 1px rgba(140, 200, 255, 0.8);
 }
 
 .weaponInfo {
@@ -181,7 +352,7 @@
   opacity: 1;
 }
 
-/* bala ejetada — left vem do JS (slot que sumiu) */
+/* left/bottom vêm do JS (posição real do slot gasto) */
 .ejectedBullet {
   position: absolute;
   height: 22px;
@@ -193,7 +364,6 @@
   animation: ejectBullet 0.45s ease-out forwards;
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
 }
-
 
 @keyframes ejectBullet {
   0% {

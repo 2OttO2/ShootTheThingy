@@ -48,8 +48,11 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
     setRecoiling(true);
     setFlash(true);
 
-    const recoilMs = weapon.id === "sub" ? 90 : 130;
-    const flashMs = weapon.id === "sub" ? 55 : 75;
+    const recoilMs = weapon.id === "sub" ? 90 : weapon.id === "sniper" ? 150 : 130;
+    const flashMs =
+      weapon.id === "sub" ? 50 :
+      weapon.id === "shotgun" ? 100 :
+      weapon.id === "sniper" ? 90 : 70;
 
     const t1 = setTimeout(() => setRecoiling(false), recoilMs);
     const t2 = setTimeout(() => setFlash(false), flashMs);
@@ -64,6 +67,7 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
     let bottom = 6;
     if (slotEl && boxEl) {
       left = slotEl.offsetLeft;
+      // sobe a partir da base do container
       bottom = boxEl.clientHeight - slotEl.offsetTop - slotEl.offsetHeight;
     }
 
@@ -102,12 +106,19 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
             alt={weapon.name}
             draggable={false}
           />
+          {/* flash na ponta do cano — estilo por arma */}
           <span
             className={`${styles.muzzleFlash} ${
-              flash ? styles.muzzleFlashOn : ""
-            }`}
+              styles[`flash_${weapon.id}`] || ""
+            } ${flash ? styles.muzzleFlashOn : ""}`}
             aria-hidden
-          />
+          >
+            <span className={styles.flashCore} />
+            <span className={styles.flashStar} />
+            <span className={styles.flashSpark} />
+            <span className={styles.flashSpark2} />
+            <span className={styles.flashSpark3} />
+          </span>
         </div>
 
         <div className={styles.weaponInfo}>
