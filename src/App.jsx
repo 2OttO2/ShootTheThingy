@@ -49,6 +49,7 @@ function App() {
   const reloadTimerRef = useRef(0);
   const [ammo, setAmmo] = useState(0);
   const [isReloading, setIsReloading] = useState(false);
+  const [shotTick, setShotTick] = useState(0);
 
   // debug
   const [debugHitboxes, setDebugHitboxes] = useState([]);
@@ -336,6 +337,7 @@ function App() {
       jumpCooldown.current = cooldown;
       ammoRef.current -= 1;
       setAmmo(ammoRef.current);
+      setShotTick((t) => t + 1);
 
       // se esvaziou o pente, já agenda o reload
       if (ammoRef.current <= 0) {
@@ -382,6 +384,7 @@ function App() {
             weapon={selectedWeapon}
             ammo={ammo}
             isReloading={isReloading}
+            shotTick={shotTick}
         />
       )}
 
