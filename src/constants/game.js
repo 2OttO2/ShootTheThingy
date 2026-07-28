@@ -1,8 +1,9 @@
-export const BASE_GAME_SPEED = 1;
+export const BASE_GAME_SPEED = 0; // pode parar por completo
+export const INITIAL_GAME_SPEED = 3.5; // velocidade ao começar/reiniciar
 export const MAX_GAME_SPEED = 10;
 
-export const MOMENTUM_GAIN = 1.35;
-export const MOMENTUM_DECAY = 0.005;
+export const MOMENTUM_GAIN = 1.35; // ganho por tiro
+export const MOMENTUM_DECAY = 0.012; // decaimento contínuo
 
 export const SPIKE_SIZE = 64;
 export const SPIKE_SPEED = 4;
@@ -11,10 +12,15 @@ export const PLAYER_SIZE = 40;
 
 export const GRAVITY = 0.3;
 export const JUMP_FORCE = -15; // fallback
-export const BOUNCE = 0.8;
+export const BOUNCE = 0.8; // retenção da velocidade vertical no bounce
+export const BOUNCE_SPEED_LOSS = 0.18; // % da speed horizontal perdida no bounce
 
 export const TETO_HEIGHT = 5;
 export const GROUND_HEIGHT = 5;
+
+// morte por ficar parado
+export const STALL_DEATH_MS = 3000; // speed 0 por este tempo = morte
+export const DEATH_DELAY_MS = 5000; // espera antes da tela de score (futura animação)
 
 // =====================
 // ARMAS

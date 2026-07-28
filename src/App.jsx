@@ -19,6 +19,7 @@ import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
 
 import {
   BASE_GAME_SPEED,
+  INITIAL_GAME_SPEED,
   MAX_GAME_SPEED,
   MOMENTUM_GAIN,
   MOMENTUM_DECAY,
@@ -26,8 +27,11 @@ import {
   GRAVITY,
   JUMP_FORCE,
   BOUNCE,
+  BOUNCE_SPEED_LOSS,
   TETO_HEIGHT,
   GROUND_HEIGHT,
+  STALL_DEATH_MS,
+  DEATH_DELAY_MS,
   WEAPONS,
 } from "./constants/game.js";
 
@@ -37,6 +41,7 @@ const GAME_STATE = {
   MENU: "menu",
   WEAPON_SELECT: "weapon_select",
   PLAYING: "playing",
+  DYING: "dying", // speed 0 por 3s — espera animação antes do GameOver
   DEAD: "dead",
   SCORES: "scores",
 };
@@ -61,6 +66,8 @@ function App() {
   // game state — começa no MENU
   const [gameState, setGameState] = useState(GAME_STATE.MENU);
   const isDeadRef = useRef(false);
+  const zeroSpeedTimer = useRef(0); // ms acumulados com speed 0
+  const deathDelayTimeout = useRef(null);
 
   // arma selecionada
   const [selectedWeaponId, setSelectedWeaponId] = useState(null);
@@ -108,6 +115,11 @@ function App() {
       cancelAnimationFrame(animationRef.current);
       animationRef.current = null;
     }
+    if (deathDelayTimeout.current) {
+      clearTimeout(deathDelayTimeout.current);
+      deathDelayTimeout.current = null;
+    }
+    zeroSpeedTimer.current = 0;
     setGameState(GAME_STATE.MENU);
   }
 
@@ -132,11 +144,16 @@ function App() {
 
     setSelectedWeaponId(weaponId);
     isDeadRef.current = false;
+    zeroSpeedTimer.current = 0;
+    if (deathDelayTimeout.current) {
+      clearTimeout(deathDelayTimeout.current);
+      deathDelayTimeout.current = null;
+    }
     setGameState(GAME_STATE.PLAYING);
 
     resetPlayer();
-    momentum.current = 0;
-    gameSpeed.current = BASE_GAME_SPEED;
+    momentum.current = INITIAL_GAME_SPEED;
+    gameSpeed.current = INITIAL_GAME_SPEED;
     distanceRef.current = 0;
     setDistance(0);
     resetSpikes();
@@ -148,11 +165,16 @@ function App() {
   function resetGame() {
     // reinicia com a mesma arma
     isDeadRef.current = false;
+    zeroSpeedTimer.current = 0;
+    if (deathDelayTimeout.current) {
+      clearTimeout(deathDelayTimeout.current);
+      deathDelayTimeout.current = null;
+    }
     setGameState(GAME_STATE.PLAYING);
 
     resetPlayer();
-    momentum.current = 0;
-    gameSpeed.current = BASE_GAME_SPEED;
+    momentum.current = INITIAL_GAME_SPEED;
+    gameSpeed.current = INITIAL_GAME_SPEED;
     distanceRef.current = 0;
     setDistance(0);
     resetSpikes();
@@ -186,15 +208,12 @@ function App() {
     lastTime.current = time;
     const dt = deltaTime / 16.67;
 
-    // momentum / speed
+    // momentum / speed — decai até zero; sem piso mínimo
     momentum.current -= MOMENTUM_DECAY * dt;
     if (momentum.current < 0) {
       momentum.current = 0;
     }
-    gameSpeed.current = Math.min(
-      BASE_GAME_SPEED + momentum.current,
-      MAX_GAME_SPEED
-    );
+    gameSpeed.current = Math.min(momentum.current, MAX_GAME_SPEED);
 
     distanceRef.current += gameSpeed.current * dt;
     setDistance(Math.floor(distanceRef.current));
@@ -212,16 +231,38 @@ function App() {
     speed.current += GRAVITY * dt;
     playerY.current += speed.current * dt;
 
-    // bounce teto
+    // bounce teto — perde velocidade vertical e horizontal
     if (playerY.current <= teto) {
       playerY.current = teto;
       speed.current *= -BOUNCE;
+      momentum.current *= 1 - BOUNCE_SPEED_LOSS;
     }
 
-    // bounce chão
+    // bounce chão — perde velocidade vertical e horizontal
     if (playerY.current >= floor) {
       playerY.current = floor;
       speed.current *= -BOUNCE;
+      momentum.current *= 1 - BOUNCE_SPEED_LOSS;
+    }
+
+    // morte por ficar parado (speed 0 por STALL_DEATH_MS)
+    if (gameSpeed.current <= 0) {
+      zeroSpeedTimer.current += deltaTime;
+      if (zeroSpeedTimer.current >= STALL_DEATH_MS) {
+        isDeadRef.current = true;
+        setGameState(GAME_STATE.DYING);
+        // espera DEATH_DELAY_MS (futura animação) antes da tela de score
+        if (deathDelayTimeout.current) {
+          clearTimeout(deathDelayTimeout.current);
+        }
+        deathDelayTimeout.current = setTimeout(() => {
+          setGameState(GAME_STATE.DEAD);
+          deathDelayTimeout.current = null;
+        }, DEATH_DELAY_MS);
+        return;
+      }
+    } else {
+      zeroSpeedTimer.current = 0;
     }
 
     // firerate cooldown
@@ -276,6 +317,9 @@ function App() {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
+      if (deathDelayTimeout.current) {
+        clearTimeout(deathDelayTimeout.current);
+      }
     };
   }, []);
 
@@ -288,7 +332,8 @@ function App() {
       if (
         gameState === GAME_STATE.MENU ||
         gameState === GAME_STATE.WEAPON_SELECT ||
-        gameState === GAME_STATE.SCORES
+        gameState === GAME_STATE.SCORES ||
+        gameState === GAME_STATE.DYING
       ) {
         return;
       }
@@ -348,9 +393,10 @@ function App() {
           : 1000;
       }
 
+      // única forma de ganhar speed
       momentum.current = Math.min(
         momentum.current + MOMENTUM_GAIN,
-        MAX_GAME_SPEED - BASE_GAME_SPEED
+        MAX_GAME_SPEED
       );
     };
 
@@ -410,7 +456,9 @@ function App() {
       )}
 
       {/* elementos do jogo (sempre montados, mas só atualizam quando PLAYING) */}
-      {(gameState === GAME_STATE.PLAYING || gameState === GAME_STATE.DEAD) && (
+      {(gameState === GAME_STATE.PLAYING ||
+        gameState === GAME_STATE.DYING ||
+        gameState === GAME_STATE.DEAD) && (
         <>
           <Teto />
           <Distance distance={distance} />
