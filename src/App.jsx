@@ -6,7 +6,6 @@ import Teto from "./components/Teto/Teto.jsx";
 import Ground from "./components/Ground/Ground.jsx";
 import DebugHitboxes from "./utils/DebugHitboxes.jsx";
 import GameOver from "./components/GameOver/GameOver.jsx";
-import Distance from "./components/Distance/Distance.jsx";
 import Menu from "./components/Menu/Menu.jsx";
 import WeaponSelect from "./components/WeaponSelect/WeaponSelect.jsx";
 import Scores, { saveScore } from "./components/Scores/Scores.jsx";
@@ -62,6 +61,7 @@ function App() {
   // distance
   const [distance, setDistance] = useState(0);
   const distanceRef = useRef(0);
+  const [displaySpeed,setDisplaySpeed] = useState(0);
 
   // game state — começa no MENU
   const [gameState, setGameState] = useState(GAME_STATE.MENU);
@@ -156,6 +156,7 @@ function App() {
     gameSpeed.current = INITIAL_GAME_SPEED;
     distanceRef.current = 0;
     setDistance(0);
+    setDisplaySpeed(INITIAL_GAME_SPEED);
     resetSpikes();
     lastTime.current = 0;
 
@@ -177,6 +178,7 @@ function App() {
     gameSpeed.current = INITIAL_GAME_SPEED;
     distanceRef.current = 0;
     setDistance(0);
+    setDisplaySpeed(INITIAL_GAME_SPEED);
     resetSpikes();
     lastTime.current = 0;
 
@@ -217,6 +219,7 @@ function App() {
 
     distanceRef.current += gameSpeed.current * dt;
     setDistance(Math.floor(distanceRef.current));
+    setDisplaySpeed(gameSpeed.current);
 
     // spikes
     updateSpikes(dt, gameSpeed.current);
@@ -425,12 +428,15 @@ function App() {
         <Menu onStart={goToWeaponSelect} onScores={goToScores} />
       )}
 
-      {gameState === GAME_STATE.PLAYING && (
+   {(gameState === GAME_STATE.PLAYING || gameState === GAME_STATE.DYING) && (
         <Hud
             weapon={selectedWeapon}
             ammo={ammo}
             isReloading={isReloading}
             shotTick={shotTick}
+            distance={distance}
+            speed={displaySpeed}
+            maxSpeed={MAX_GAME_SPEED}
         />
       )}
 
@@ -461,7 +467,6 @@ function App() {
         gameState === GAME_STATE.DEAD) && (
         <>
           <Teto />
-          <Distance distance={distance} />
           <Player drawY={drawY} />
           <Spikes
             x={spikes.top.x}

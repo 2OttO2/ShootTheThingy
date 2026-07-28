@@ -32,7 +32,7 @@ const RECOIL_DEG = {
   sniper: 18,
 };
 
-function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
+function Hud({ weapon, ammo, isReloading, shotTick = 0, distance = 0, speed = 0, maxSpeed = 10 }) {
   const [recoiling, setRecoiling] = useState(false);
   const [flash, setFlash] = useState(false);
   const [ejected, setEjected] = useState([]); // { id, src, left, bottom }
@@ -57,8 +57,6 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
     const t1 = setTimeout(() => setRecoiling(false), recoilMs);
     const t2 = setTimeout(() => setFlash(false), flashMs);
 
-    // slot que acabou de ser gasto = índice `ammo`
-    // (ammo já foi decrementado no App antes do shotTick)
     const spentIndex = Math.max(0, ammo);
     const slotEl = bulletRefs.current[spentIndex];
     const boxEl = bulletsBoxRef.current;
@@ -67,7 +65,6 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
     let bottom = 6;
     if (slotEl && boxEl) {
       left = slotEl.offsetLeft;
-      // sobe a partir da base do container
       bottom = boxEl.clientHeight - slotEl.offsetTop - slotEl.offsetHeight;
     }
 
@@ -93,84 +90,119 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0 }) {
   const slots = Math.min(max, 24);
   const kick = RECOIL_DEG[weapon.id] || 8;
 
+  const speedRatio = Math.max(0, Math.min(1, speed / maxSpeed));
+  const speedClass =
+    speedRatio <= 0.05 ? styles.speedCritical :
+    speedRatio <= 0.25 ? styles.speedLow :
+    speedRatio <= 0.55 ? styles.speedMid :
+    styles.speedHigh;
+
   return (
-    <div className={styles.hud}>
-      <div className={styles.weaponBlock}>
-        <div className={styles.weaponStage}>
-          <img
-            className={`${styles.weaponSprite} ${
-              recoiling ? styles.weaponRecoil : ""
-            }`}
-            style={{ "--kick": `${kick}deg` }}
-            src={weaponSrc}
-            alt={weapon.name}
-            draggable={false}
-          />
-          {/* flash na ponta do cano — estilo por arma */}
-          <span
-            className={`${styles.muzzleFlash} ${
-              styles[`flash_${weapon.id}`] || ""
-            } ${flash ? styles.muzzleFlashOn : ""}`}
-            aria-hidden
-          >
-            <span className={styles.flashCore} />
-            <span className={styles.flashStar} />
-            <span className={styles.flashSpark} />
-            <span className={styles.flashSpark2} />
-            <span className={styles.flashSpark3} />
-          </span>
+    <>
+      {/* stats — canto superior esquerdo */}
+      <div className={styles.stats}>
+        <div className={styles.statBlock}>
+          <span className={styles.statLabel}>DIST</span>
+          <span className={styles.statValue}>{distance}</span>
         </div>
 
-        <div className={styles.weaponInfo}>
-          <span className={styles.weaponName} style={{ color: weapon.color }}>
-            {weapon.name}
-          </span>
-          <span className={styles.ammoCount}>
-            {isReloading ? (
-              <span className={styles.reloading}>REC...</span>
-            ) : (
-              <>
-                <span className={styles.ammoCurrent}>{ammo}</span>
-                <span className={styles.ammoSep}>/</span>
-                <span className={styles.ammoMax}>{max}</span>
-              </>
-            )}
-          </span>
+        <div className={`${styles.statBlock} ${styles.speedBlock}`}>
+          <div className={styles.speedHeader}>
+            <span className={styles.statLabel}>SPEED</span>
+            <span className={`${styles.speedNum} ${speedClass}`}>
+              {speed.toFixed(1)}
+            </span>
+          </div>
+          <div className={styles.speedTrack}>
+            <div
+              className={`${styles.speedFill} ${speedClass}`}
+              style={{ width: `${speedRatio * 100}%` }}
+            />
+            <span className={styles.tick} style={{ left: "25%" }} />
+            <span className={styles.tick} style={{ left: "50%" }} />
+            <span className={styles.tick} style={{ left: "75%" }} />
+          </div>
         </div>
       </div>
 
-      <div className={styles.bullets} ref={bulletsBoxRef}>
-        {Array.from({ length: slots }).map((_, i) => {
-          const filledUpTo = Math.ceil((ammo / max) * slots);
-          const filled = i < filledUpTo;
-          return (
+      {/* arma + munição — canto inferior esquerdo */}
+      <div className={styles.hud}>
+        <div className={styles.weaponBlock}>
+          <div className={styles.weaponStage}>
             <img
-              key={i}
-              ref={(el) => {
-                bulletRefs.current[i] = el;
-              }}
-              className={`${styles.bullet} ${
-                filled ? styles.bulletFilled : styles.bulletEmpty
+              className={`${styles.weaponSprite} ${
+                recoiling ? styles.weaponRecoil : ""
               }`}
-              src={bulletSrc}
+              style={{ "--kick": `${kick}deg` }}
+              src={weaponSrc}
+              alt={weapon.name}
+              draggable={false}
+            />
+            <span
+              className={`${styles.muzzleFlash} ${
+                styles[`flash_${weapon.id}`] || ""
+              } ${flash ? styles.muzzleFlashOn : ""}`}
+              aria-hidden
+            >
+              <span className={styles.flashCore} />
+              <span className={styles.flashStar} />
+              <span className={styles.flashSpark} />
+              <span className={styles.flashSpark2} />
+              <span className={styles.flashSpark3} />
+            </span>
+          </div>
+
+          <div className={styles.weaponInfo}>
+            <span className={styles.weaponName} style={{ color: weapon.color }}>
+              {weapon.name}
+            </span>
+            <span className={styles.ammoCount}>
+              {isReloading ? (
+                <span className={styles.reloading}>REC...</span>
+              ) : (
+                <>
+                  <span className={styles.ammoCurrent}>{ammo}</span>
+                  <span className={styles.ammoSep}>/</span>
+                  <span className={styles.ammoMax}>{max}</span>
+                </>
+              )}
+            </span>
+          </div>
+        </div>
+
+        <div className={styles.bullets} ref={bulletsBoxRef}>
+          {Array.from({ length: slots }).map((_, i) => {
+            const filledUpTo = Math.ceil((ammo / max) * slots);
+            const filled = i < filledUpTo;
+            return (
+              <img
+                key={i}
+                ref={(el) => {
+                  bulletRefs.current[i] = el;
+                }}
+                className={`${styles.bullet} ${
+                  filled ? styles.bulletFilled : styles.bulletEmpty
+                }`}
+                src={bulletSrc}
+                alt=""
+                draggable={false}
+              />
+            );
+          })}
+
+          {ejected.map((b) => (
+            <img
+              key={b.id}
+              className={styles.ejectedBullet}
+              style={{ left: b.left, bottom: b.bottom }}
+              src={b.src}
               alt=""
               draggable={false}
             />
-          );
-        })}
-
-        {ejected.map((b) => (
-          <img
-            key={b.id}
-            className={styles.ejectedBullet}
-            style={{ left: b.left, bottom: b.bottom }}
-            src={b.src}
-            alt=""
-            draggable={false}
-          />
-        ))}
+          ))}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
