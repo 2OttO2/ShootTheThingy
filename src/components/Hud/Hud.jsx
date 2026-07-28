@@ -102,13 +102,13 @@ function Hud({ weapon, ammo, isReloading, shotTick = 0, distance = 0, speed = 0,
       {/* stats — canto superior esquerdo */}
       <div className={styles.stats}>
         <div className={styles.statBlock}>
-          <span className={styles.statLabel}>DIST</span>
+          <span className={styles.statLabel} style={{ color : weapon.color }}>DISTANCE</span>
           <span className={styles.statValue}>{distance}</span>
         </div>
 
         <div className={`${styles.statBlock} ${styles.speedBlock}`}>
           <div className={styles.speedHeader}>
-            <span className={styles.statLabel}>SPEED</span>
+            <span className={styles.statLabel} style={{ color : weapon.color }}>SPEED</span>
             <span className={`${styles.speedNum} ${speedClass}`}>
               {speed.toFixed(1)}
             </span>
