@@ -248,7 +248,7 @@ function App() {
 
     // colisão
     const player = {
-      x: 200,
+      x: 300,
       y: playerY.current + 8,
       width: 25,
       height: 25,

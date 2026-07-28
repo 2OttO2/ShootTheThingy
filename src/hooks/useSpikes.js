@@ -3,13 +3,15 @@ import { SPIKE_SPEED } from "../constants/game";
 
 function createSpikes() {
   return {
+
+    // 4 + 2 deixe 0 0 para testes
     top: {
       x: window.innerWidth,
-      amount: Math.floor(Math.random() * 4) + 2,
+      amount: Math.floor(Math.random() * 0) + 0,
     },
     bottom: {
       x: window.innerWidth,
-      amount: Math.floor(Math.random() * 4) + 2,
+      amount: Math.floor(Math.random() * 0) + 0,
     },
   };
 }
