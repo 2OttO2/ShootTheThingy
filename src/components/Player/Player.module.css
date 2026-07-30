@@ -329,3 +329,88 @@
     opacity: 0.5;
   }
 }
+/* ===== RAGDOLL ===== */
+.ragdollLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 25;
+  overflow: hidden;
+}
+
+.rdHead {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  background: #f5d0a9;
+  border: 2px solid #333;
+  border-radius: 50%;
+  z-index: 3;
+}
+
+.rdEye {
+  position: absolute;
+  width: 5px;
+  height: 6px;
+  background: #111;
+  border-radius: 50%;
+  top: 10px;
+  left: 6px;
+}
+
+.rdEyeRight {
+  left: auto;
+  right: 6px;
+}
+
+.rdTorso {
+  position: absolute;
+  background: #6c5ce7;
+  border: 2px solid #333;
+  border-radius: 6px;
+  z-index: 2;
+}
+
+.rdNeck {
+  position: absolute;
+  background: #f5d0a9;
+  border: 1px solid #333;
+  border-radius: 3px;
+  z-index: 2;
+}
+
+.rdArm {
+  position: absolute;
+  background: #f5d0a9;
+  border: 2px solid #333;
+  border-radius: 4px;
+  z-index: 1;
+}
+
+.rdLeg {
+  position: absolute;
+  background: #2d3436;
+  border: 2px solid #333;
+  border-radius: 3px;
+  z-index: 1;
+}
+
+.rdJoint {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #f5d0a9;
+  border: 1px solid #333;
+  border-radius: 50%;
+  z-index: 2;
+}
+
+.rdFoot {
+  position: absolute;
+  width: 12px;
+  height: 7px;
+  background: #2d3436;
+  border: 2px solid #333;
+  border-radius: 3px;
+  z-index: 2;
+}

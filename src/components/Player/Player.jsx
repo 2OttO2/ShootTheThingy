@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import styles from "./Player.module.css";
+import {
+  createRagdoll,
+  stepRagdoll,
+  ragdollSnapshot,
+  angleBetween,
+  dist,
+} from "../../utils/ragdoll.js";
 
-// posições possíveis da ferida no corpo (% left, % top)
 const WOUND_ZONES = [
   { left: 28, top: 38 },
   { left: 62, top: 36 },
@@ -24,11 +30,6 @@ function randomWound() {
   };
 }
 
-/**
- * Cria partículas estilo Happy Wheels.
- * velocityY: negativo = subindo (recoil), positivo = caindo
- * moveSpeed: horizontal — sangue arrasta pra ESQUERDA
- */
 function makeSprayBurst({ count, originLeft, originTop, velocityY, moveSpeed, deathMode }) {
   const particles = [];
   const vyBias = Math.max(-1, Math.min(1, velocityY / 12));
@@ -55,8 +56,6 @@ function makeSprayBurst({ count, originLeft, originTop, velocityY, moveSpeed, de
 
     let dx = Math.cos(angle) * speed + vxBias * 50;
     let dy = Math.sin(angle) * speed + vyBias * 25;
-
-    // nunca empurra o sangue "pra frente" (direita)
     if (dx > 15) dx *= 0.35;
 
     const rot = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
@@ -77,22 +76,49 @@ function makeSprayBurst({ count, originLeft, originTop, velocityY, moveSpeed, de
   return particles;
 }
 
+function Limb({ a, b, className, thickness = 8 }) {
+  if (!a || !b) return null;
+  const length = dist(a, b);
+  const angle = angleBetween(a, b);
+  return (
+    <div
+      className={className}
+      style={{
+        left: a.x,
+        top: a.y,
+        width: length,
+        height: thickness,
+        transform: `rotate(${angle}deg)`,
+        transformOrigin: "0 50%",
+      }}
+    />
+  );
+}
+
 function Player({
   drawY,
   shotTick = 0,
   deathType = "none",
   velocityY = 0,
   moveSpeed = 0,
+  playerX = 300,
 }) {
   const [wounds, setWounds] = useState([]);
   const [bloodSpray, setBloodSpray] = useState([]);
+  const [ragdollPose, setRagdollPose] = useState(null);
+
   const lastTick = useRef(0);
   const velocityRef = useRef(velocityY);
   const moveSpeedRef = useRef(moveSpeed);
+  const drawYRef = useRef(drawY);
+  const ragdollRef = useRef(null);
+  const ragdollRaf = useRef(null);
+  const lastRafTime = useRef(0);
+
   velocityRef.current = velocityY;
   moveSpeedRef.current = moveSpeed;
+  drawYRef.current = drawY;
 
-  // tiro → ferida + jorro
   useEffect(() => {
     if (!shotTick || shotTick === lastTick.current) return;
     if (deathType !== "none") return;
@@ -110,34 +136,72 @@ function Player({
       deathMode: null,
     });
 
-    setBloodSpray((prev) => {
-      const next = [...prev, ...burst];
-      return next.slice(-80);
-    });
+    setBloodSpray((prev) => [...prev, ...burst].slice(-80));
 
-    const maxLife = 900;
     const timeout = setTimeout(() => {
       setBloodSpray((prev) => prev.filter((p) => !burst.find((b) => b.id === p.id)));
-    }, maxLife);
+    }, 900);
     return () => clearTimeout(timeout);
   }, [shotTick, deathType]);
 
-  // morte por spike → jorro grande
   useEffect(() => {
-    if (deathType !== "spike_side" && deathType !== "spike_top") return;
+    if (deathType === "none") {
+      if (ragdollRaf.current) {
+        cancelAnimationFrame(ragdollRaf.current);
+        ragdollRaf.current = null;
+      }
+      ragdollRef.current = null;
+      setRagdollPose(null);
+      return;
+    }
 
-    const burst = makeSprayBurst({
-      count: 40 + Math.floor(Math.random() * 20),
-      originLeft: 50,
-      originTop: 50,
+    const floorY = window.innerHeight - 8;
+    const ceilingY = 5;
+
+    const rd = createRagdoll(playerX, drawYRef.current, {
+      deathType,
       velocityY: velocityRef.current,
       moveSpeed: moveSpeedRef.current,
-      deathMode: deathType,
+      floorY,
+      ceilingY,
     });
-    setBloodSpray(burst);
-  }, [deathType]);
+    ragdollRef.current = rd;
+    setRagdollPose(ragdollSnapshot(rd));
+    lastRafTime.current = 0;
 
-  // limpa no reset
+    if (deathType === "spike_side" || deathType === "spike_top") {
+      const burst = makeSprayBurst({
+        count: 40 + Math.floor(Math.random() * 20),
+        originLeft: 50,
+        originTop: 50,
+        velocityY: velocityRef.current,
+        moveSpeed: moveSpeedRef.current,
+        deathMode: deathType,
+      });
+      setBloodSpray(burst);
+    }
+
+    const loop = (time) => {
+      if (!ragdollRef.current) return;
+      if (!lastRafTime.current) lastRafTime.current = time;
+      const dt = Math.min(time - lastRafTime.current, 40);
+      lastRafTime.current = time;
+      const dtNorm = dt / 16.67;
+
+      stepRagdoll(ragdollRef.current, dtNorm);
+      setRagdollPose(ragdollSnapshot(ragdollRef.current));
+      ragdollRaf.current = requestAnimationFrame(loop);
+    };
+    ragdollRaf.current = requestAnimationFrame(loop);
+
+    return () => {
+      if (ragdollRaf.current) {
+        cancelAnimationFrame(ragdollRaf.current);
+        ragdollRaf.current = null;
+      }
+    };
+  }, [deathType, playerX]);
+
   useEffect(() => {
     if (deathType === "none" && shotTick === 0) {
       setWounds([]);
@@ -148,21 +212,66 @@ function Player({
 
   const tilt = Math.max(-18, Math.min(18, velocityY * 1.2));
   const isDying = deathType !== "none";
-  const deathClass =
-    deathType === "spike_side"
-      ? styles.dyingSide
-      : deathType === "spike_top"
-        ? styles.dyingTop
-        : deathType === "stall"
-          ? styles.dyingStall
-          : "";
+
+  if (isDying && ragdollPose) {
+    const p = ragdollPose;
+    return (
+      <>
+        <div className={styles.ragdollLayer}>
+          <Limb a={p.chest} b={p.hip} className={styles.rdTorso} thickness={14} />
+          <Limb a={p.head} b={p.chest} className={styles.rdNeck} thickness={6} />
+          <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={7} />
+          <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={7} />
+          <Limb a={p.chest} b={p.lShoulder} className={styles.rdArm} thickness={6} />
+          <Limb a={p.chest} b={p.rShoulder} className={styles.rdArm} thickness={6} />
+          <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={8} />
+          <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={8} />
+          <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={7} />
+          <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={7} />
+
+          <div
+            className={styles.rdHead}
+            style={{ left: p.head.x - 14, top: p.head.y - 14 }}
+          >
+            <div className={styles.rdEye} />
+            <div className={`${styles.rdEye} ${styles.rdEyeRight}`} />
+          </div>
+
+          <div className={styles.rdJoint} style={{ left: p.lHand.x - 4, top: p.lHand.y - 4 }} />
+          <div className={styles.rdJoint} style={{ left: p.rHand.x - 4, top: p.rHand.y - 4 }} />
+          <div className={styles.rdFoot} style={{ left: p.lFoot.x - 5, top: p.lFoot.y - 3 }} />
+          <div className={styles.rdFoot} style={{ left: p.rFoot.x - 5, top: p.rFoot.y - 3 }} />
+        </div>
+
+        {bloodSpray.map((d) => (
+          <span
+            key={d.id}
+            className={styles.spray}
+            style={{
+              position: "absolute",
+              left: p.chest.x,
+              top: p.chest.y,
+              width: d.size,
+              height: d.height,
+              zIndex: 30,
+              animationDuration: `${d.duration}s`,
+              animationDelay: `${d.delay}ms`,
+              ["--dx"]: `${d.dx}px`,
+              ["--dy"]: `${d.dy}px`,
+              ["--rot"]: `${d.rot}deg`,
+            }}
+          />
+        ))}
+      </>
+    );
+  }
 
   return (
     <div
-      className={`${styles.player} ${isDying ? deathClass : ""}`}
+      className={styles.player}
       style={{
         top: `${drawY}px`,
-        transform: isDying ? undefined : `rotate(${tilt}deg)`,
+        transform: `rotate(${tilt}deg)`,
       }}
     >
       <div className={styles.body}>
@@ -178,14 +287,11 @@ function Player({
         <div className={styles.legRight} />
       </div>
 
-      {/* feridas + filetes (arrastam pra ESQUERDA com moveSpeed) */}
       {wounds.map((w) => {
         const vyAbs = Math.min(1, Math.abs(velocityY) / 16);
         const hx = Math.min(1, Math.max(0, moveSpeed) / 10);
-
         const dripLen = 32 + vyAbs * 36 + hx * 30;
 
-        // positivo = pende pra esquerda (nunca pra direita)
         let dripAngle = 12 + hx * 40;
         if (velocityY < -2) {
           dripAngle = 20 + hx * 35 + vyAbs * 15;
@@ -230,7 +336,6 @@ function Player({
         );
       })}
 
-      {/* partículas voando */}
       {bloodSpray.map((d) => (
         <span
           key={d.id}
