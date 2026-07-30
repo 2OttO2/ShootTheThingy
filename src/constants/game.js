@@ -42,6 +42,7 @@ export const WEAPONS = {
     reload: 2000,
     magazine: 12,
     color: "#f1c40f",
+    scoreMultiplier:1.0,
   },
   sub: {
     id: "sub",
@@ -52,6 +53,7 @@ export const WEAPONS = {
     reload: 3000,
     magazine: 24,
     color: "#2ecc71",
+    scoreMultiplier:0.5,
   },
   shotgun: {
     id: "shotgun",
@@ -62,6 +64,7 @@ export const WEAPONS = {
     reload: 3000,
     magazine: 6,
     color: "#e67e22",
+    scoreMultiplier: 2.0,
   },
   sniper: {
     id: "sniper",
@@ -72,5 +75,6 @@ export const WEAPONS = {
     reload: 2000,
     magazine: 5,
     color: "#e74c3c",
+    scoreMultiplier: 5.0,
   },
 };
