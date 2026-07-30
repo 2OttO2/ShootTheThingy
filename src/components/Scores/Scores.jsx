@@ -13,7 +13,7 @@ function getScores() {
 function Scores({ onBack }) {
   const scores = useMemo(() => {
     return getScores()
-      .sort((a, b) => b.distance - a.distance)
+      .sort((a, b) => (b.score ?? b.distance) - (a.score ?? a.distance))
       .slice(0, 15);
   }, []);
 
@@ -32,7 +32,9 @@ function Scores({ onBack }) {
                 <span className={styles.rank}>#{i + 1}</span>
                 <span className={styles.name}>{entry.name || "Anônimo"}</span>
                 <span className={styles.weapon}>{entry.weapon || "—"}</span>
-                <span className={styles.distance}>{entry.distance}</span>
+                <span className={styles.distance}>
+                     {entry.score ?? entry.distance}
+                </span>
               </li>
             ))}
           </ul>
@@ -47,14 +49,14 @@ function Scores({ onBack }) {
 }
 
 export default Scores;
-
-// helper pra salvar score (pode ser chamado do App)
-export function saveScore(distance, weaponName, name) {
+//responsavel por salvar o score 
+export function saveScore(score, weaponName, name, rawDistance) {
   try {
     const scores = getScores();
     scores.push({
       name: name || "Anônimo",
-      distance,
+      score,
+      distance: rawDistance ?? score,
       weapon: weaponName,
       date: new Date().toISOString(),
     });
