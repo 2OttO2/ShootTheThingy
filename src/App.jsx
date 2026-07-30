@@ -56,6 +56,8 @@ function App() {
   const [ammo, setAmmo] = useState(0);
   const [isReloading, setIsReloading] = useState(false);
   const [shotTick, setShotTick] = useState(0);
+  const [deathType, setDeathType] = useState("none"); // none | spike_side | spike_top | stall
+  const [velocityY, setVelocityY] = useState(0);
 
   // debug
   const [debugHitboxes, setDebugHitboxes] = useState([]);
