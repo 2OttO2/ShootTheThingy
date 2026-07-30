@@ -14,8 +14,8 @@ export const GRAVITY = 0.3;
 export const JUMP_FORCE = -15; // fallback
 export const BOUNCE = 0.8; // retenção da velocidade vertical no bounce
 export const BOUNCE_SPEED_LOSS = 0.02; // % da speed horizontal perdida no bounce
-export const FALL_SPEED_GAIN   = 0.004  // quanto da queda vira speed
-export const FALL_SPEED_CAP    = 0.8    // limite por frame
+export const FALL_SPEED_GAIN = 0.004;  // quanto da queda vira speed
+export const FALL_SPEED_CAP = 0.8;    // limite por frame
 
 export const TETO_HEIGHT = 5;
 export const GROUND_HEIGHT = 5;
