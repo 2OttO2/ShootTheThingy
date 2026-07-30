@@ -110,7 +110,7 @@
   right: 12px;
 }
 
-/* ===== ferida + vazamento ===== */
+/* ===== ferida + vazamento (estilo Happy Wheels) ===== */
 .wound {
   position: absolute;
   width: 0;
@@ -119,6 +119,7 @@
   pointer-events: none;
 }
 
+/* bolinha menor: centro bem escuro, borda um pouco mais clara */
 .woundBall {
   position: absolute;
   left: -3px;
@@ -139,6 +140,7 @@
   animation: woundPop 0.2s ease-out;
 }
 
+/* filete longo — length/ângulo via --drip-len e --drip-angle */
 .drip {
   position: absolute;
   left: -1.5px;
@@ -176,6 +178,7 @@
   opacity: 0.85;
 }
 
+/* blob que se desprende e cai */
 .blob {
   position: absolute;
   left: -2px;
@@ -209,6 +212,7 @@
   }
 }
 
+/* estica ao longo do --drip-len, mantendo o ângulo */
 @keyframes dripStretch {
   0% {
     transform: rotate(var(--drip-angle, 10deg)) scaleY(0.2) scaleX(1.15);
@@ -243,7 +247,7 @@
   }
 }
 
-/* ===== jorro (streaks finos) ===== */
+/* ===== jorro de sangue (streaks finos estilo Happy Wheels) ===== */
 .spray {
   position: absolute;
   background: linear-gradient(
@@ -278,6 +282,8 @@
 }
 
 /* ===== mortes ===== */
+
+/* espetado de lado — tomba lateral */
 .dyingSide {
   animation: dieSide 0.7s ease-in forwards;
   filter: saturate(1.4);
@@ -296,6 +302,7 @@
   }
 }
 
+/* caiu em cima do spike — crava pra baixo */
 .dyingTop {
   animation: dieTop 0.65s ease-in forwards;
   filter: saturate(1.5);
@@ -314,6 +321,7 @@
   }
 }
 
+/* morte por stall — murcha */
 .dyingStall {
   animation: dieStall 1.2s ease-in forwards;
 }
@@ -329,6 +337,7 @@
     opacity: 0.5;
   }
 }
+
 /* ===== RAGDOLL ===== */
 .ragdollLayer {
   position: absolute;
@@ -414,3 +423,53 @@
   border-radius: 3px;
   z-index: 2;
 }
+
+/* ===== cotos (membro seccionado) ===== */
+.stump {
+  position: absolute;
+  background: #f5d0a9;
+  border: 2px solid #333;
+  z-index: 2;
+}
+
+.stump::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, #8b0000 0%, #4a0000 70%, transparent 100%);
+  border-radius: inherit;
+  opacity: 0.85;
+}
+
+.stumpArmLeft {
+  left: 6px;
+  top: 30px;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+}
+
+.stumpArmRight {
+  right: 6px;
+  top: 30px;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+}
+
+.stumpLegLeft {
+  left: 12px;
+  bottom: 12px;
+  width: 9px;
+  height: 8px;
+  border-radius: 3px;
+}
+
+.stumpLegRight {
+  right: 12px;
+  bottom: 12px;
+  width: 9px;
+  height: 8px;
+  border-radius: 3px;
+}
+

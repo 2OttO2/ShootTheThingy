@@ -8,26 +8,63 @@ import {
   dist,
 } from "../../utils/ragdoll.js";
 
-// posições possíveis da ferida no corpo (% left, % top)
-const WOUND_ZONES = [
-  { left: 28, top: 38 },
-  { left: 62, top: 36 },
-  { left: 45, top: 48 },
-  { left: 35, top: 58 },
-  { left: 58, top: 56 },
-  { left: 42, top: 68 },
-  { left: 30, top: 72 },
-  { left: 55, top: 74 },
-  { left: 38, top: 82 },
-  { left: 52, top: 84 },
-];
+/**
+ * Ordem de dano:
+ * 1) perna E → 2) perna D → 3) braço E → 4) braço D  (3 tiros cada, 2 furos visíveis)
+ * 5) testa → 6) genital → 7) coração  (1 tiro cada marca)
+ * depois: aleatório na mesma região (torso/cabeça)
+ */
 
-function randomWound() {
-  const zone = WOUND_ZONES[Math.floor(Math.random() * WOUND_ZONES.length)];
+const LIMB_ORDER = ["legLeft", "legRight", "armLeft", "armRight"];
+const LIMB_HP = 3;
+const LIMB_MAX_HOLES = 2;
+
+const LIMB_HOLE_SPOTS = {
+  legLeft: [
+    { left: 28, top: 78 },
+    { left: 32, top: 88 },
+  ],
+  legRight: [
+    { left: 68, top: 78 },
+    { left: 64, top: 88 },
+  ],
+  armLeft: [
+    { left: 12, top: 42 },
+    { left: 16, top: 52 },
+  ],
+  armRight: [
+    { left: 84, top: 42 },
+    { left: 80, top: 52 },
+  ],
+};
+
+const VITAL_ORDER = ["forehead", "groin", "heart"];
+const VITAL_SPOTS = {
+  forehead: { left: 50, top: 12 },
+  groin: { left: 50, top: 62 },
+  heart: { left: 42, top: 38 },
+};
+
+const REGION_SPOTS = {
+  head: [
+    { left: 42, top: 8 },
+    { left: 58, top: 10 },
+    { left: 48, top: 18 },
+    { left: 55, top: 16 },
+  ],
+  torso: [
+    { left: 40, top: 36 },
+    { left: 55, top: 40 },
+    { left: 45, top: 48 },
+    { left: 52, top: 52 },
+    { left: 48, top: 58 },
+  ],
+};
+
+function jitter(spot, amount = 4) {
   return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    left: zone.left + (Math.random() * 8 - 4),
-    top: zone.top + (Math.random() * 6 - 3),
+    left: spot.left + (Math.random() * amount * 2 - amount),
+    top: spot.top + (Math.random() * amount * 2 - amount),
   };
 }
 
@@ -77,7 +114,6 @@ function makeSprayBurst({ count, originLeft, originTop, velocityY, moveSpeed, de
   return particles;
 }
 
-/** Segmento visual entre dois pontos do ragdoll */
 function Limb({ a, b, className, thickness = 8 }) {
   if (!a || !b) return null;
   const length = dist(a, b);
@@ -97,6 +133,15 @@ function Limb({ a, b, className, thickness = 8 }) {
   );
 }
 
+function emptyLimbState() {
+  return {
+    legLeft: { hits: 0, severed: false, holes: [] },
+    legRight: { hits: 0, severed: false, holes: [] },
+    armLeft: { hits: 0, severed: false, holes: [] },
+    armRight: { hits: 0, severed: false, holes: [] },
+  };
+}
+
 function Player({
   drawY,
   shotTick = 0,
@@ -109,6 +154,8 @@ function Player({
   const [wounds, setWounds] = useState([]);
   const [bloodSpray, setBloodSpray] = useState([]);
   const [ragdollPose, setRagdollPose] = useState(null);
+  const [limbs, setLimbs] = useState(emptyLimbState);
+  const [vitalIndex, setVitalIndex] = useState(0);
 
   const lastTick = useRef(0);
   const velocityRef = useRef(velocityY);
@@ -117,53 +164,124 @@ function Player({
   const ragdollRef = useRef(null);
   const ragdollRaf = useRef(null);
   const lastRafTime = useRef(0);
+  const limbsRef = useRef(limbs);
+  const vitalRef = useRef(vitalIndex);
+  const woundsRef = useRef(wounds);
+
   velocityRef.current = velocityY;
   moveSpeedRef.current = moveSpeed;
   drawYRef.current = drawY;
+  limbsRef.current = limbs;
+  vitalRef.current = vitalIndex;
+  woundsRef.current = wounds;
 
-  // tiro → ferida + jorro no sistema global de sangue
-  useEffect(() => {
-    if (!shotTick || shotTick === lastTick.current) return;
-    if (deathType !== "none") return;
-    lastTick.current = shotTick;
+  function applyShot() {
+    const L = { ...limbsRef.current };
+    for (const k of Object.keys(L)) {
+      L[k] = { ...L[k], holes: [...L[k].holes] };
+    }
 
-    const wound = randomWound();
-    setWounds((prev) => [...prev, wound].slice(-14));
+    let targetPart = null;
+    let spot = null;
+    let severedNow = false;
 
-    // posição mundo da ferida (player 48x64 em playerX / drawY)
-    const worldX = playerX + (wound.left / 100) * 48;
-    const worldY = drawYRef.current + (wound.top / 100) * 64;
+    const nextLimb = LIMB_ORDER.find((id) => !L[id].severed);
+    if (nextLimb) {
+      targetPart = nextLimb;
+      const limb = L[nextLimb];
+      limb.hits += 1;
+
+      const spots = LIMB_HOLE_SPOTS[nextLimb];
+      const holeIdx = Math.min(limb.holes.length, spots.length - 1);
+      const pos = jitter(spots[holeIdx], 3);
+      if (limb.holes.length < LIMB_MAX_HOLES) {
+        limb.holes.push(pos);
+      } else {
+        limb.holes[limb.holes.length - 1] = pos;
+      }
+
+      spot = pos;
+
+      if (limb.hits >= LIMB_HP) {
+        limb.severed = true;
+        severedNow = true;
+      }
+
+      setLimbs(L);
+      limbsRef.current = L;
+    } else {
+      let vIdx = vitalRef.current;
+      if (vIdx < VITAL_ORDER.length) {
+        targetPart = VITAL_ORDER[vIdx];
+        spot = jitter(VITAL_SPOTS[targetPart], 2.5);
+        vIdx += 1;
+        setVitalIndex(vIdx);
+        vitalRef.current = vIdx;
+      } else {
+        const region = Math.random() > 0.35 ? "torso" : "head";
+        targetPart = region;
+        const pool = REGION_SPOTS[region];
+        spot = jitter(pool[Math.floor(Math.random() * pool.length)], 5);
+      }
+    }
+
+    const wound = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      left: spot.left,
+      top: spot.top,
+      part: targetPart,
+    };
+
+    setWounds((prev) => {
+      let next = [...prev, wound];
+      if (severedNow && targetPart) {
+        next = next.filter((w) => w.part !== targetPart);
+      }
+      next = next.filter((w) => {
+        if (LIMB_ORDER.includes(w.part)) {
+          return !L[w.part]?.severed;
+        }
+        return true;
+      });
+      return next.slice(-20);
+    });
+
+    const worldX = playerX + (spot.left / 100) * 48;
+    const worldY = drawYRef.current + (spot.top / 100) * 64;
 
     bloodRef?.current?.burst({
       x: worldX,
       y: worldY,
-      count: 16 + Math.floor(Math.random() * 10),
+      count: severedNow ? 22 + Math.floor(Math.random() * 10) : 14 + Math.floor(Math.random() * 8),
       velocityY: velocityRef.current,
       moveSpeed: moveSpeedRef.current,
-      mode: "shot",
-      power: 1,
+      mode: severedNow ? "death" : "shot",
+      power: severedNow ? 1.15 : 1,
     });
 
-    // spray local CSS leve (backup visual na ferida)
     const burst = makeSprayBurst({
-      count: 8 + Math.floor(Math.random() * 6),
-      originLeft: wound.left,
-      originTop: wound.top,
+      count: severedNow ? 12 : 6,
+      originLeft: spot.left,
+      originTop: spot.top,
       velocityY: velocityRef.current,
       moveSpeed: moveSpeedRef.current,
-      deathMode: null,
+      deathMode: severedNow ? "spike_side" : null,
     });
     setBloodSpray((prev) => [...prev, ...burst].slice(-40));
-    const timeout = setTimeout(() => {
+    setTimeout(() => {
       setBloodSpray((prev) => prev.filter((p) => !burst.find((b) => b.id === p.id)));
     }, 700);
-    return () => clearTimeout(timeout);
+  }
+
+  useEffect(() => {
+    if (!shotTick || shotTick === lastTick.current) return;
+    if (deathType !== "none") return;
+    lastTick.current = shotTick;
+    applyShot();
   }, [shotTick, deathType, playerX]);
 
-  // ativa ragdoll + sangue na morte
   useEffect(() => {
     if (deathType === "none") {
-      // cleanup
       if (ragdollRaf.current) {
         cancelAnimationFrame(ragdollRaf.current);
         ragdollRaf.current = null;
@@ -187,7 +305,6 @@ function Player({
     setRagdollPose(ragdollSnapshot(rd));
     lastRafTime.current = 0;
 
-    // jorro de sangue global na morte
     const cx = playerX + 24;
     const cy = drawYRef.current + 32;
     bloodRef?.current?.burst({
@@ -221,21 +338,26 @@ function Player({
     };
   }, [deathType, playerX]);
 
-  // limpa feridas no reset
   useEffect(() => {
     if (deathType === "none" && shotTick === 0) {
       setWounds([]);
       setBloodSpray([]);
+      const empty = emptyLimbState();
+      setLimbs(empty);
+      setVitalIndex(0);
       lastTick.current = 0;
+      limbsRef.current = empty;
+      vitalRef.current = 0;
     }
   }, [deathType, shotTick]);
 
-  // pingos contínuos das feridas (estilo HW)
+  // pingos só via partículas globais
   useEffect(() => {
     if (deathType !== "none" || wounds.length === 0) return;
 
     const id = setInterval(() => {
-      const w = wounds[Math.floor(Math.random() * wounds.length)];
+      const list = woundsRef.current;
+      const w = list[Math.floor(Math.random() * list.length)];
       if (!w) return;
       const worldX = playerX + (w.left / 100) * 48;
       const worldY = drawYRef.current + (w.top / 100) * 64;
@@ -245,36 +367,30 @@ function Player({
         velocityY: velocityRef.current,
         moveSpeed: moveSpeedRef.current,
       });
-    }, 280);
+    }, 260);
 
     return () => clearInterval(id);
-  }, [wounds, deathType, playerX, bloodRef]);
+  }, [wounds.length, deathType, playerX, bloodRef]);
 
   const tilt = Math.max(-18, Math.min(18, velocityY * 1.2));
   const isDying = deathType !== "none";
 
-  // ===== RAGDOLL RENDER =====
   if (isDying && ragdollPose) {
     const p = ragdollPose;
     return (
       <>
         <div className={styles.ragdollLayer}>
-          {/* tronco */}
           <Limb a={p.chest} b={p.hip} className={styles.rdTorso} thickness={14} />
-          {/* pescoço / cabeça ligada */}
           <Limb a={p.head} b={p.chest} className={styles.rdNeck} thickness={6} />
-          {/* braços */}
           <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={7} />
           <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={7} />
           <Limb a={p.chest} b={p.lShoulder} className={styles.rdArm} thickness={6} />
           <Limb a={p.chest} b={p.rShoulder} className={styles.rdArm} thickness={6} />
-          {/* pernas */}
           <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={8} />
           <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={8} />
           <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={7} />
           <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={7} />
 
-          {/* cabeça */}
           <div
             className={styles.rdHead}
             style={{ left: p.head.x - 14, top: p.head.y - 14 }}
@@ -283,14 +399,12 @@ function Player({
             <div className={`${styles.rdEye} ${styles.rdEyeRight}`} />
           </div>
 
-          {/* mãos / pés (bolinhas) */}
           <div className={styles.rdJoint} style={{ left: p.lHand.x - 4, top: p.lHand.y - 4 }} />
           <div className={styles.rdJoint} style={{ left: p.rHand.x - 4, top: p.rHand.y - 4 }} />
           <div className={styles.rdFoot} style={{ left: p.lFoot.x - 5, top: p.lFoot.y - 3 }} />
           <div className={styles.rdFoot} style={{ left: p.rFoot.x - 5, top: p.rFoot.y - 3 }} />
         </div>
 
-        {/* sangue no impacto — ancorado no peito do ragdoll */}
         {bloodSpray.map((d) => (
           <span
             key={d.id}
@@ -314,7 +428,6 @@ function Player({
     );
   }
 
-  // ===== PLAYER VIVO =====
   return (
     <div
       className={styles.player}
@@ -330,60 +443,26 @@ function Player({
           <div className={styles.mouth} />
         </div>
         <div className={styles.torso} />
-        <div className={styles.armLeft} />
-        <div className={styles.armRight} />
-        <div className={styles.legLeft} />
-        <div className={styles.legRight} />
+        {!limbs.armLeft.severed && <div className={styles.armLeft} />}
+        {!limbs.armRight.severed && <div className={styles.armRight} />}
+        {!limbs.legLeft.severed && <div className={styles.legLeft} />}
+        {!limbs.legRight.severed && <div className={styles.legRight} />}
+
+        {limbs.armLeft.severed && <div className={`${styles.stump} ${styles.stumpArmLeft}`} />}
+        {limbs.armRight.severed && <div className={`${styles.stump} ${styles.stumpArmRight}`} />}
+        {limbs.legLeft.severed && <div className={`${styles.stump} ${styles.stumpLegLeft}`} />}
+        {limbs.legRight.severed && <div className={`${styles.stump} ${styles.stumpLegRight}`} />}
       </div>
 
-      {wounds.map((w) => {
-        const vyAbs = Math.min(1, Math.abs(velocityY) / 16);
-        const hx = Math.min(1, Math.max(0, moveSpeed) / 10);
-        const dripLen = 32 + vyAbs * 36 + hx * 30;
-
-        let dripAngle = 12 + hx * 40;
-        if (velocityY < -2) {
-          dripAngle = 20 + hx * 35 + vyAbs * 15;
-        } else if (velocityY > 2) {
-          dripAngle = 5 + hx * 30;
-        }
-
-        const dripDur = Math.max(0.4, 1.05 - vyAbs * 0.35 - hx * 0.25);
-
-        return (
-          <div
-            key={w.id}
-            className={styles.wound}
-            style={{ left: `${w.left}%`, top: `${w.top}%` }}
-          >
-            <span className={styles.woundBall} />
-            <span
-              className={styles.drip}
-              style={{
-                ["--drip-len"]: `${dripLen}px`,
-                ["--drip-angle"]: `${dripAngle}deg`,
-                animationDuration: `${dripDur}s`,
-              }}
-            />
-            <span
-              className={`${styles.drip} ${styles.drip2}`}
-              style={{
-                ["--drip-len"]: `${dripLen * 0.8}px`,
-                ["--drip-angle"]: `${dripAngle + 10}deg`,
-                animationDuration: `${dripDur + 0.18}s`,
-              }}
-            />
-            <span
-              className={`${styles.drip} ${styles.drip3}`}
-              style={{
-                ["--drip-len"]: `${dripLen * 0.6}px`,
-                ["--drip-angle"]: `${Math.max(5, dripAngle - 8)}deg`,
-                animationDuration: `${dripDur + 0.3}s`,
-              }}
-            />
-          </div>
-        );
-      })}
+      {wounds.map((w) => (
+        <div
+          key={w.id}
+          className={styles.wound}
+          style={{ left: `${w.left}%`, top: `${w.top}%` }}
+        >
+          <span className={styles.woundBall} />
+        </div>
+      ))}
 
       {bloodSpray.map((d) => (
         <span
