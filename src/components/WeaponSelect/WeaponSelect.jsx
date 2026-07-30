@@ -56,6 +56,7 @@ function WeaponSelect({ onSelect, onBack }) {
                 <span>Firerate: {weapon.firerate}ms</span>
                 <span>Reload: {weapon.reload}ms</span>
                 <span>Pente: {weapon.magazine}</span>
+                <span>Multiplicador de score: {weapon.scoreMultiplier} X </span>
               </div>
             </button>
           ))}
