@@ -110,7 +110,7 @@
   right: 12px;
 }
 
-/* ===== ferida + vazamento (estilo Happy Wheels) ===== */
+/* ===== ferida + vazamento ===== */
 .wound {
   position: absolute;
   width: 0;
@@ -119,7 +119,6 @@
   pointer-events: none;
 }
 
-/* bolinha menor: centro bem escuro, borda um pouco mais clara */
 .woundBall {
   position: absolute;
   left: -3px;
@@ -140,48 +139,43 @@
   animation: woundPop 0.2s ease-out;
 }
 
-/* filete principal — estica e cai com blob na ponta */
 .drip {
   position: absolute;
   left: -1.5px;
   top: 3px;
-  width: 3px;
-  height: 14px;
+  width: 3.5px;
+  height: var(--drip-len, 40px);
   background: linear-gradient(
     to bottom,
     #5c0000 0%,
-    #9b0000 40%,
-    #c00 80%,
-    #7a0000 100%
+    #9b0000 20%,
+    #c00 45%,
+    #7a0000 75%,
+    transparent 100%
   );
-  border-radius: 40% 40% 60% 60%;
+  border-radius: 45% 45% 60% 60%;
   transform-origin: top center;
-  animation: dripStretch 0.85s ease-in infinite;
+  transform: rotate(var(--drip-angle, 10deg));
+  animation: dripStretch 0.9s ease-in infinite;
+  filter: drop-shadow(0 1px 1px rgba(40, 0, 0, 0.45));
 }
 
 .drip2 {
-  left: 2px;
+  left: 2.5px;
   top: 4px;
-  width: 2.5px;
-  height: 10px;
-  animation-delay: 0.28s;
-  animation-duration: 1.05s;
-  opacity: 0.9;
+  width: 2.8px;
+  animation-delay: 0.22s;
+  opacity: 0.92;
 }
 
-/* terceira gota mais fina / torta */
 .drip3 {
-  left: -3.5px;
+  left: -4px;
   top: 5px;
-  width: 2px;
-  height: 8px;
-  animation-delay: 0.5s;
-  animation-duration: 1.2s;
-  transform: rotate(-12deg);
-  transform-origin: top center;
+  width: 2.2px;
+  animation-delay: 0.45s;
+  opacity: 0.85;
 }
 
-/* blob que se desprende e cai */
 .blob {
   position: absolute;
   left: -2px;
@@ -215,23 +209,21 @@
   }
 }
 
-/* estica pra baixo tipo muco/sangue do HW */
 @keyframes dripStretch {
   0% {
-    transform: scaleY(0.25) scaleX(1.1);
-    opacity: 0.95;
-    height: 6px;
+    transform: rotate(var(--drip-angle, 10deg)) scaleY(0.2) scaleX(1.15);
+    opacity: 0.9;
   }
-  35% {
-    transform: scaleY(1.1) scaleX(0.85);
+  30% {
+    transform: rotate(var(--drip-angle, 10deg)) scaleY(0.85) scaleX(0.95);
     opacity: 1;
   }
-  70% {
-    transform: scaleY(2.4) scaleX(0.6);
-    opacity: 0.85;
+  65% {
+    transform: rotate(var(--drip-angle, 10deg)) scaleY(1.35) scaleX(0.7);
+    opacity: 0.9;
   }
   100% {
-    transform: scaleY(3.2) scaleX(0.45) translateY(6px);
+    transform: rotate(var(--drip-angle, 10deg)) scaleY(1.7) scaleX(0.45);
     opacity: 0;
   }
 }
@@ -251,43 +243,41 @@
   }
 }
 
-/* ===== jorro de sangue (partículas estilo Happy Wheels) ===== */
+/* ===== jorro (streaks finos) ===== */
 .spray {
   position: absolute;
-  background: radial-gradient(
-    circle at 40% 35%,
-    #c41e1e 0%,
-    #8b0000 45%,
-    #4a0000 100%
+  background: linear-gradient(
+    to bottom,
+    #d22 0%,
+    #a00000 40%,
+    #5c0000 100%
   );
-  border-radius: 40% 55% 45% 60%;
+  border-radius: 30% 30% 45% 45%;
   pointer-events: none;
   z-index: 6;
-  margin-left: -2px;
-  margin-top: -2px;
-  box-shadow: 0 0 1px rgba(60, 0, 0, 0.8);
-  animation: sprayOut 0.5s cubic-bezier(0.15, 0.7, 0.35, 1) forwards;
+  margin-left: -1px;
+  margin-top: -1px;
+  box-shadow: 0 0 1px rgba(60, 0, 0, 0.7);
+  animation: sprayOut 0.5s cubic-bezier(0.12, 0.65, 0.3, 1) forwards;
   will-change: transform, opacity;
 }
 
 @keyframes sprayOut {
   0% {
-    transform: translate(0, 0) rotate(0deg) scale(1);
+    transform: translate(0, 0) rotate(var(--rot, 0deg)) scale(1);
     opacity: 1;
   }
   70% {
     opacity: 1;
   }
   100% {
-    transform: translate(var(--dx), var(--dy)) rotate(var(--rot, 180deg))
-      scale(0.35);
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot, 0deg))
+      scale(0.4);
     opacity: 0;
   }
 }
 
 /* ===== mortes ===== */
-
-/* espetado de lado — tomba lateral */
 .dyingSide {
   animation: dieSide 0.7s ease-in forwards;
   filter: saturate(1.4);
@@ -306,7 +296,6 @@
   }
 }
 
-/* caiu em cima do spike — crava pra baixo */
 .dyingTop {
   animation: dieTop 0.65s ease-in forwards;
   filter: saturate(1.5);
@@ -325,7 +314,6 @@
   }
 }
 
-/* morte por stall — murcha */
 .dyingStall {
   animation: dieStall 1.2s ease-in forwards;
 }

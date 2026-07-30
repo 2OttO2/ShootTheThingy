@@ -516,6 +516,7 @@ function App() {
             shotTick={shotTick}
             deathType={deathType}
             velocityY={velocityY}
+            moveSpeed={displaySpeed}
           />
           <Spikes
             x={spikes.top.x}
