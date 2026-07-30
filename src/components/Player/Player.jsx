@@ -8,6 +8,7 @@ import {
   dist,
 } from "../../utils/ragdoll.js";
 
+// posições possíveis da ferida no corpo (% left, % top)
 const WOUND_ZONES = [
   { left: 28, top: 38 },
   { left: 62, top: 36 },
@@ -76,6 +77,7 @@ function makeSprayBurst({ count, originLeft, originTop, velocityY, moveSpeed, de
   return particles;
 }
 
+/** Segmento visual entre dois pontos do ragdoll */
 function Limb({ a, b, className, thickness = 8 }) {
   if (!a || !b) return null;
   const length = dist(a, b);
@@ -102,6 +104,7 @@ function Player({
   velocityY = 0,
   moveSpeed = 0,
   playerX = 300,
+  bloodRef = null,
 }) {
   const [wounds, setWounds] = useState([]);
   const [bloodSpray, setBloodSpray] = useState([]);
@@ -114,11 +117,11 @@ function Player({
   const ragdollRef = useRef(null);
   const ragdollRaf = useRef(null);
   const lastRafTime = useRef(0);
-
   velocityRef.current = velocityY;
   moveSpeedRef.current = moveSpeed;
   drawYRef.current = drawY;
 
+  // tiro → ferida + jorro no sistema global de sangue
   useEffect(() => {
     if (!shotTick || shotTick === lastTick.current) return;
     if (deathType !== "none") return;
@@ -127,25 +130,40 @@ function Player({
     const wound = randomWound();
     setWounds((prev) => [...prev, wound].slice(-14));
 
+    // posição mundo da ferida (player 48x64 em playerX / drawY)
+    const worldX = playerX + (wound.left / 100) * 48;
+    const worldY = drawYRef.current + (wound.top / 100) * 64;
+
+    bloodRef?.current?.burst({
+      x: worldX,
+      y: worldY,
+      count: 16 + Math.floor(Math.random() * 10),
+      velocityY: velocityRef.current,
+      moveSpeed: moveSpeedRef.current,
+      mode: "shot",
+      power: 1,
+    });
+
+    // spray local CSS leve (backup visual na ferida)
     const burst = makeSprayBurst({
-      count: 18 + Math.floor(Math.random() * 12),
+      count: 8 + Math.floor(Math.random() * 6),
       originLeft: wound.left,
       originTop: wound.top,
       velocityY: velocityRef.current,
       moveSpeed: moveSpeedRef.current,
       deathMode: null,
     });
-
-    setBloodSpray((prev) => [...prev, ...burst].slice(-80));
-
+    setBloodSpray((prev) => [...prev, ...burst].slice(-40));
     const timeout = setTimeout(() => {
       setBloodSpray((prev) => prev.filter((p) => !burst.find((b) => b.id === p.id)));
-    }, 900);
+    }, 700);
     return () => clearTimeout(timeout);
-  }, [shotTick, deathType]);
+  }, [shotTick, deathType, playerX]);
 
+  // ativa ragdoll + sangue na morte
   useEffect(() => {
     if (deathType === "none") {
+      // cleanup
       if (ragdollRaf.current) {
         cancelAnimationFrame(ragdollRaf.current);
         ragdollRaf.current = null;
@@ -169,17 +187,18 @@ function Player({
     setRagdollPose(ragdollSnapshot(rd));
     lastRafTime.current = 0;
 
-    if (deathType === "spike_side" || deathType === "spike_top") {
-      const burst = makeSprayBurst({
-        count: 40 + Math.floor(Math.random() * 20),
-        originLeft: 50,
-        originTop: 50,
-        velocityY: velocityRef.current,
-        moveSpeed: moveSpeedRef.current,
-        deathMode: deathType,
-      });
-      setBloodSpray(burst);
-    }
+    // jorro de sangue global na morte
+    const cx = playerX + 24;
+    const cy = drawYRef.current + 32;
+    bloodRef?.current?.burst({
+      x: cx,
+      y: cy,
+      count: deathType === "stall" ? 18 : 45 + Math.floor(Math.random() * 20),
+      velocityY: velocityRef.current,
+      moveSpeed: moveSpeedRef.current,
+      mode: "death",
+      power: deathType === "stall" ? 0.6 : 1.3,
+    });
 
     const loop = (time) => {
       if (!ragdollRef.current) return;
@@ -202,6 +221,7 @@ function Player({
     };
   }, [deathType, playerX]);
 
+  // limpa feridas no reset
   useEffect(() => {
     if (deathType === "none" && shotTick === 0) {
       setWounds([]);
@@ -210,25 +230,51 @@ function Player({
     }
   }, [deathType, shotTick]);
 
+  // pingos contínuos das feridas (estilo HW)
+  useEffect(() => {
+    if (deathType !== "none" || wounds.length === 0) return;
+
+    const id = setInterval(() => {
+      const w = wounds[Math.floor(Math.random() * wounds.length)];
+      if (!w) return;
+      const worldX = playerX + (w.left / 100) * 48;
+      const worldY = drawYRef.current + (w.top / 100) * 64;
+      bloodRef?.current?.drip({
+        x: worldX,
+        y: worldY,
+        velocityY: velocityRef.current,
+        moveSpeed: moveSpeedRef.current,
+      });
+    }, 280);
+
+    return () => clearInterval(id);
+  }, [wounds, deathType, playerX, bloodRef]);
+
   const tilt = Math.max(-18, Math.min(18, velocityY * 1.2));
   const isDying = deathType !== "none";
 
+  // ===== RAGDOLL RENDER =====
   if (isDying && ragdollPose) {
     const p = ragdollPose;
     return (
       <>
         <div className={styles.ragdollLayer}>
+          {/* tronco */}
           <Limb a={p.chest} b={p.hip} className={styles.rdTorso} thickness={14} />
+          {/* pescoço / cabeça ligada */}
           <Limb a={p.head} b={p.chest} className={styles.rdNeck} thickness={6} />
+          {/* braços */}
           <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={7} />
           <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={7} />
           <Limb a={p.chest} b={p.lShoulder} className={styles.rdArm} thickness={6} />
           <Limb a={p.chest} b={p.rShoulder} className={styles.rdArm} thickness={6} />
+          {/* pernas */}
           <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={8} />
           <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={8} />
           <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={7} />
           <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={7} />
 
+          {/* cabeça */}
           <div
             className={styles.rdHead}
             style={{ left: p.head.x - 14, top: p.head.y - 14 }}
@@ -237,12 +283,14 @@ function Player({
             <div className={`${styles.rdEye} ${styles.rdEyeRight}`} />
           </div>
 
+          {/* mãos / pés (bolinhas) */}
           <div className={styles.rdJoint} style={{ left: p.lHand.x - 4, top: p.lHand.y - 4 }} />
           <div className={styles.rdJoint} style={{ left: p.rHand.x - 4, top: p.rHand.y - 4 }} />
           <div className={styles.rdFoot} style={{ left: p.lFoot.x - 5, top: p.lFoot.y - 3 }} />
           <div className={styles.rdFoot} style={{ left: p.rFoot.x - 5, top: p.rFoot.y - 3 }} />
         </div>
 
+        {/* sangue no impacto — ancorado no peito do ragdoll */}
         {bloodSpray.map((d) => (
           <span
             key={d.id}
@@ -266,6 +314,7 @@ function Player({
     );
   }
 
+  // ===== PLAYER VIVO =====
   return (
     <div
       className={styles.player}

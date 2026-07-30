@@ -10,6 +10,7 @@ import Menu from "./components/Menu/Menu.jsx";
 import WeaponSelect from "./components/WeaponSelect/WeaponSelect.jsx";
 import Scores, { saveScore } from "./components/Scores/Scores.jsx";
 import Hud from "./components/Hud/Hud.jsx";
+import BloodLayer from "./components/Blood/BloodLayer.jsx";
 
 import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
@@ -104,7 +105,7 @@ function App() {
 
   const animationRef = useRef(null);
   const lastTime = useRef(0);
-
+  const bloodRef = useRef(null);
 
   // limites
   const teto = TETO_HEIGHT;
@@ -156,6 +157,7 @@ function App() {
     setDeathType("none");
     setShotTick(0);
     setVelocityY(0);
+    bloodRef.current?.clear();
     setGameState(GAME_STATE.PLAYING);
 
     resetPlayer();
@@ -181,6 +183,7 @@ function App() {
     setDeathType("none");
     setShotTick(0);
     setVelocityY(0);
+    bloodRef.current?.clear();
     setGameState(GAME_STATE.PLAYING);
 
     resetPlayer();
@@ -408,6 +411,15 @@ function App() {
       // sem munição → inicia reload
       if (ammoRef.current <= 0) {
         isReloadingRef.current = true;
+        reloadTimerRef.current = selectedWeapon
+          ? selectedWeapon.reload
+          : 1000;
+        return;
+      }
+      
+            // sem munição → inicia reload
+      if (ammoRef.current <= 0) {
+        isReloadingRef.current = true;
         setIsReloading(true);
         reloadTimerRef.current = selectedWeapon
           ? selectedWeapon.reload
@@ -517,6 +529,16 @@ function App() {
             deathType={deathType}
             velocityY={velocityY}
             moveSpeed={displaySpeed}
+            bloodRef={bloodRef}
+            playerX={300}
+          />
+          <BloodLayer
+            ref={bloodRef}
+            active={
+              gameState === GAME_STATE.PLAYING ||
+              gameState === GAME_STATE.DYING ||
+              gameState === GAME_STATE.DEAD
+            }
           />
           <Spikes
             x={spikes.top.x}
