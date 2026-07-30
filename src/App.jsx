@@ -28,6 +28,8 @@ import {
   BOUNCE,
   BOUNCE_SPEED_LOSS,
   TETO_HEIGHT,
+  FALL_SPEED_GAIN,
+  FALL_SPEED_CAP,
   GROUND_HEIGHT,
   STALL_DEATH_MS,
   DEATH_DELAY_MS,
@@ -233,6 +235,19 @@ function App() {
     // player physics
     speed.current += GRAVITY * dt;
     playerY.current += speed.current * dt;
+
+    // queda converte um pouco da velocidade vertical em speed horizontal
+    // (não muito: ganho pequeno + cap por frame; nunca passa do MAX)
+    if (speed.current > 0) {
+      const fallGain = Math.min(
+        speed.current * FALL_SPEED_GAIN * dt,
+        FALL_SPEED_CAP * dt
+      );
+      momentum.current = Math.min(
+        momentum.current + fallGain,
+        MAX_GAME_SPEED
+      );
+    }
 
     // bounce teto — perde velocidade vertical e horizontal
     if (playerY.current <= teto) {
