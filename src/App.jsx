@@ -466,15 +466,21 @@ function App() {
         <Scores onBack={goToMenu} />
       )}
 
-      {gameState === GAME_STATE.DEAD && (
+    {gameState === GAME_STATE.DEAD && (
         <GameOver
-          distance={distance}
-          weaponName={selectedWeapon ? selectedWeapon.name : "—"}
-          onRestart={resetGame}
-          onMenu={goToMenu}
-          onPostScore={(name, dist, weapon) => saveScore(dist, weapon, name)}
+    distance={distance}
+    score={Math.floor(
+      distance * (selectedWeapon ? selectedWeapon.scoreMultiplier : 1)
+    )}
+    multiplier={selectedWeapon ? selectedWeapon.scoreMultiplier : 1}
+    weaponName={selectedWeapon ? selectedWeapon.name : "—"}
+    onRestart={resetGame}
+    onMenu={goToMenu}
+    onPostScore={(name, finalScore, weapon) =>
+      saveScore(finalScore, weapon, name, distance)
+    }
         />
-      )}
+    )}
 
       {/* elementos do jogo (sempre montados, mas só atualizam quando PLAYING) */}
       {(gameState === GAME_STATE.PLAYING ||
