@@ -18,7 +18,7 @@ export const FALL_SPEED_GAIN = 0.004;  // quanto da queda vira speed
 export const FALL_SPEED_CAP = 0.8;    // limite por frame
 
 export const TETO_HEIGHT = 5;
-export const GROUND_HEIGHT = 5;
+export const GROUND_HEIGHT = 30;
 
 // morte por ficar parado
 export const STALL_DEATH_MS = 3000; // speed 0 por este tempo = morte

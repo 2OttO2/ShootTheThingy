@@ -27,9 +27,9 @@ import {
   JUMP_FORCE,
   BOUNCE,
   BOUNCE_SPEED_LOSS,
-  TETO_HEIGHT,
   FALL_SPEED_GAIN,
   FALL_SPEED_CAP,
+  TETO_HEIGHT,
   GROUND_HEIGHT,
   STALL_DEATH_MS,
   DEATH_DELAY_MS,
@@ -153,6 +153,9 @@ function App() {
       clearTimeout(deathDelayTimeout.current);
       deathDelayTimeout.current = null;
     }
+    setDeathType("none");
+    setShotTick(0);
+    setVelocityY(0);
     setGameState(GAME_STATE.PLAYING);
 
     resetPlayer();
@@ -175,6 +178,9 @@ function App() {
       clearTimeout(deathDelayTimeout.current);
       deathDelayTimeout.current = null;
     }
+    setDeathType("none");
+    setShotTick(0);
+    setVelocityY(0);
     setGameState(GAME_STATE.PLAYING);
 
     resetPlayer();
@@ -270,8 +276,8 @@ function App() {
       zeroSpeedTimer.current += deltaTime;
       if (zeroSpeedTimer.current >= STALL_DEATH_MS) {
         isDeadRef.current = true;
+        setDeathType("stall");
         setGameState(GAME_STATE.DYING);
-        // espera DEATH_DELAY_MS (futura animação) antes da tela de score
         if (deathDelayTimeout.current) {
           clearTimeout(deathDelayTimeout.current);
         }
@@ -307,7 +313,7 @@ function App() {
       }
     }
 
-    // colisão
+    // colisão — separa top/bottom pra escolher animação de morte
     const player = {
       x: 300,
       y: playerY.current + 8,
@@ -315,18 +321,42 @@ function App() {
       height: 25,
     };
 
-    const collided = hitboxes.some((hitbox) =>
+    const topBoxes = createSpikeHitboxes(spikesRef.current.top, "top");
+    const bottomBoxes = createSpikeHitboxes(spikesRef.current.bottom, "bottom");
+
+    const hitTop = topBoxes.some((hitbox) =>
+      isPlayerCollidingWithSpike(player, hitbox)
+    );
+    const hitBottom = bottomBoxes.some((hitbox) =>
       isPlayerCollidingWithSpike(player, hitbox)
     );
 
-    if (collided) {
+    if (hitTop || hitBottom) {
       isDeadRef.current = true;
-      setGameState(GAME_STATE.DEAD);
+      // em cima do spike de baixo / espetado por baixo → spike_top
+      // bateu no de cima (mais de lado/teto) → spike_side
+      const type =
+        hitBottom && speed.current >= 0
+          ? "spike_top"
+          : hitTop
+            ? "spike_side"
+            : "spike_top";
+      setDeathType(type);
+      setGameState(GAME_STATE.DYING);
+
+      if (deathDelayTimeout.current) {
+        clearTimeout(deathDelayTimeout.current);
+      }
+      deathDelayTimeout.current = setTimeout(() => {
+        setGameState(GAME_STATE.DEAD);
+        deathDelayTimeout.current = null;
+      }, DEATH_DELAY_MS);
 
       return;
     }
 
     setDrawY(playerY.current);
+    setVelocityY(speed.current);
 
     animationRef.current = requestAnimationFrame(gameLoop);
   };
@@ -376,15 +406,6 @@ function App() {
       if (isReloadingRef.current) return;
 
       // sem munição → inicia reload
-      if (ammoRef.current <= 0) {
-        isReloadingRef.current = true;
-        reloadTimerRef.current = selectedWeapon
-          ? selectedWeapon.reload
-          : 1000;
-        return;
-      }
-      
-            // sem munição → inicia reload
       if (ammoRef.current <= 0) {
         isReloadingRef.current = true;
         setIsReloading(true);
@@ -468,21 +489,21 @@ function App() {
         <Scores onBack={goToMenu} />
       )}
 
-    {gameState === GAME_STATE.DEAD && (
+      {gameState === GAME_STATE.DEAD && (
         <GameOver
-    distance={distance}
-    score={Math.floor(
-      distance * (selectedWeapon ? selectedWeapon.scoreMultiplier : 1)
-    )}
-    multiplier={selectedWeapon ? selectedWeapon.scoreMultiplier : 1}
-    weaponName={selectedWeapon ? selectedWeapon.name : "—"}
-    onRestart={resetGame}
-    onMenu={goToMenu}
-    onPostScore={(name, finalScore, weapon) =>
-      saveScore(finalScore, weapon, name, distance)
-    }
+          distance={distance}
+          score={Math.floor(
+            distance * (selectedWeapon ? selectedWeapon.scoreMultiplier : 1)
+          )}
+          multiplier={selectedWeapon ? selectedWeapon.scoreMultiplier : 1}
+          weaponName={selectedWeapon ? selectedWeapon.name : "—"}
+          onRestart={resetGame}
+          onMenu={goToMenu}
+          onPostScore={(name, finalScore, weapon) =>
+            saveScore(finalScore, weapon, name, distance)
+          }
         />
-    )}
+      )}
 
       {/* elementos do jogo (sempre montados, mas só atualizam quando PLAYING) */}
       {(gameState === GAME_STATE.PLAYING ||
@@ -490,7 +511,12 @@ function App() {
         gameState === GAME_STATE.DEAD) && (
         <>
           <Teto />
-          <Player drawY={drawY} />
+          <Player
+            drawY={drawY}
+            shotTick={shotTick}
+            deathType={deathType}
+            velocityY={velocityY}
+          />
           <Spikes
             x={spikes.top.x}
             side="top"
