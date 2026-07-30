@@ -251,26 +251,36 @@
   }
 }
 
-/* ===== jorro de sangue ===== */
+/* ===== jorro de sangue (partículas estilo Happy Wheels) ===== */
 .spray {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  background: #a00000;
-  border-radius: 50%;
+  background: radial-gradient(
+    circle at 40% 35%,
+    #c41e1e 0%,
+    #8b0000 45%,
+    #4a0000 100%
+  );
+  border-radius: 40% 55% 45% 60%;
   pointer-events: none;
   z-index: 6;
-  animation: sprayOut 0.55s ease-out forwards;
+  margin-left: -2px;
+  margin-top: -2px;
+  box-shadow: 0 0 1px rgba(60, 0, 0, 0.8);
+  animation: sprayOut 0.5s cubic-bezier(0.15, 0.7, 0.35, 1) forwards;
+  will-change: transform, opacity;
 }
 
 @keyframes sprayOut {
   0% {
-    transform: translate(-50%, -50%) scale(1);
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  70% {
     opacity: 1;
   }
   100% {
-    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy)))
-      scale(0.3);
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot, 180deg))
+      scale(0.35);
     opacity: 0;
   }
 }
