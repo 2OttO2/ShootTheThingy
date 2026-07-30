@@ -124,6 +124,9 @@ function Player({
           <span className={styles.woundBall} />
           <span className={styles.drip} />
           <span className={`${styles.drip} ${styles.drip2}`} />
+          <span className={`${styles.drip} ${styles.drip3}`} />
+          <span className={styles.blob} />
+          <span className={`${styles.blob} ${styles.blob2}`} />
         </div>
       ))}
 
