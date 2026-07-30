@@ -1,14 +1,22 @@
 import { useState } from "react";
 import styles from "./GameOver.module.css";
 
-function GameOver({ distance, weaponName, onRestart, onMenu, onPostScore }) {
+function GameOver({
+  distance,
+  score,
+  multiplier = 1,
+  weaponName,
+  onRestart,
+  onMenu,
+  onPostScore }){
+
   const [name, setName] = useState("");
   const [posted, setPosted] = useState(false);
 
   function handlePost() {
     const trimmed = name.trim();
     if (!trimmed || posted) return;
-    onPostScore(trimmed, distance, weaponName);
+    onPostScore(trimmed, score, weaponName);
     setPosted(true);
   }
 
@@ -28,10 +36,12 @@ function GameOver({ distance, weaponName, onRestart, onMenu, onPostScore }) {
       <div className={styles.box}>
         <h1 className={styles.title}>GAME OVER</h1>
         <p className={styles.subtitle}>morreu de morte morrida</p>
-
+        
         <div className={styles.score}>
-          <span className={styles.scoreLabel}>Distância</span>
-          <span className={styles.scoreValue}>{distance}</span>
+        <span className={styles.scoreLabel}>
+        Score {multiplier !== 1 ? `(×${multiplier})` : ""}
+        </span>
+        <span className={styles.scoreValue}>{score}</span>
         </div>
 
         {!posted ? (
