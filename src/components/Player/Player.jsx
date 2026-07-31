@@ -252,7 +252,7 @@ function Player({
     bloodRef?.current?.burst({
       x: worldX,
       y: worldY,
-      count: severedNow ? 22 + Math.floor(Math.random() * 10) : 14 + Math.floor(Math.random() * 8),
+      count: severedNow ? 12 + Math.floor(Math.random() * 6) : 8 + Math.floor(Math.random() * 5),
       velocityY: velocityRef.current,
       moveSpeed: moveSpeedRef.current,
       mode: severedNow ? "death" : "shot",
@@ -260,7 +260,7 @@ function Player({
     });
 
     const burst = makeSprayBurst({
-      count: severedNow ? 12 : 6,
+      count: severedNow ? 6 : 4,
       originLeft: spot.left,
       originTop: spot.top,
       velocityY: velocityRef.current,
@@ -310,7 +310,7 @@ function Player({
     bloodRef?.current?.burst({
       x: cx,
       y: cy,
-      count: deathType === "stall" ? 18 : 45 + Math.floor(Math.random() * 20),
+      count: deathType === "stall" ? 10 : 20 + Math.floor(Math.random() * 10),
       velocityY: velocityRef.current,
       moveSpeed: moveSpeedRef.current,
       mode: "death",
@@ -394,57 +394,53 @@ function Player({
       const vy = velocityRef.current;
       const ms = moveSpeedRef.current;
 
-      // venous: a cada ~45ms emite de várias feridas (fluxo contínuo)
-      if (venousAcc >= 45 && list.length) {
+      // venous: stream contínuo, 1 fonte por tick (leve)
+      if (venousAcc >= 70 && list.length) {
         venousAcc = 0;
-        const n = Math.min(4, 1 + Math.floor(list.length / 2));
-        for (let i = 0; i < n; i++) {
-          const w = list[Math.floor(Math.random() * list.length)];
-          if (!w) continue;
+        const w = list[Math.floor(Math.random() * list.length)];
+        if (w) {
           bloodRef?.current?.drip({
             x: playerX + (w.left / 100) * 48,
             y: drawYRef.current + (w.top / 100) * 64,
             velocityY: vy,
             moveSpeed: ms,
-            power: isArterialPart(w.part) ? 1.05 : 0.85,
-            count: 3 + Math.floor(Math.random() * 3),
+            power: isArterialPart(w.part) ? 0.95 : 0.75,
+            count: 2,
           });
         }
       }
 
-      // arterial: jato quase contínuo (~55ms) — sem “batida” espaçada
+      // arterial: 1 vital por tick, ritmo alto mas barato
       const arterials = list.filter((w) => isArterialPart(w.part));
-      if (arterialAcc >= 55 && arterials.length) {
+      if (arterialAcc >= 80 && arterials.length) {
         arterialAcc = 0;
-        for (const w of arterials) {
-          const power =
-            w.part === "heart" ? 1.4 : w.part === "forehead" ? 1.2 : 1.05;
-          bloodRef?.current?.arterial({
-            x: playerX + (w.left / 100) * 48,
-            y: drawYRef.current + (w.top / 100) * 64,
-            velocityY: vy,
-            moveSpeed: ms,
-            power,
-            count: 5 + Math.floor(Math.random() * 4),
-          });
-        }
+        const w = arterials[Math.floor(Math.random() * arterials.length)];
+        const power =
+          w.part === "heart" ? 1.25 : w.part === "forehead" ? 1.1 : 1.0;
+        bloodRef?.current?.arterial({
+          x: playerX + (w.left / 100) * 48,
+          y: drawYRef.current + (w.top / 100) * 64,
+          velocityY: vy,
+          moveSpeed: ms,
+          power,
+          count: 3,
+        });
       }
 
-      // stump: jorro contínuo de cada coto (~50ms)
+      // stump: 1 coto por tick
       const severed = LIMB_ORDER.filter((id) => limbsRef.current[id].severed);
-      if (stumpAcc >= 50 && severed.length) {
+      if (stumpAcc >= 75 && severed.length) {
         stumpAcc = 0;
-        for (const id of severed) {
-          const pos = STUMP_POS[id];
-          bloodRef?.current?.stump({
-            x: playerX + (pos.left / 100) * 48,
-            y: drawYRef.current + (pos.top / 100) * 64,
-            velocityY: vy,
-            moveSpeed: ms,
-            power: 1.2,
-            count: 6 + Math.floor(Math.random() * 5),
-          });
-        }
+        const id = severed[Math.floor(Math.random() * severed.length)];
+        const pos = STUMP_POS[id];
+        bloodRef?.current?.stump({
+          x: playerX + (pos.left / 100) * 48,
+          y: drawYRef.current + (pos.top / 100) * 64,
+          velocityY: vy,
+          moveSpeed: ms,
+          power: 1.1,
+          count: 3,
+        });
       }
 
       raf = requestAnimationFrame(loop);

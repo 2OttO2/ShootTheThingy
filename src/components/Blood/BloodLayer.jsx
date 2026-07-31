@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import styles from "./BloodLayer.module.css";
 import {
   createBloodSystem,
@@ -7,24 +7,19 @@ import {
   bloodArterial,
   bloodStump,
   stepBlood,
-  bloodSnapshot,
   clearBlood,
   setBloodFloor,
 } from "../../utils/bloodParticles.js";
 
 /**
- * Camada global de sangue.
- *   bloodRef.current.burst({ x, y, count, mode, power, ... })
- *   bloodRef.current.drip({ x, y })
- *   bloodRef.current.arterial({ x, y })
- *   bloodRef.current.stump({ x, y })
- *   bloodRef.current.clear()
+ * Canvas blood layer — sem React state, sem manchas no chão.
+ *   bloodRef.current.burst / drip / arterial / stump / clear
  */
 const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
   const systemRef = useRef(null);
+  const canvasRef = useRef(null);
   const rafRef = useRef(null);
   const lastTime = useRef(0);
-  const [particles, setParticles] = useState([]);
 
   if (!systemRef.current) {
     systemRef.current = createBloodSystem();
@@ -53,21 +48,56 @@ const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
     },
     clear() {
       clearBlood(systemRef.current);
-      setParticles([]);
     },
   }));
 
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
     if (!active) {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      return;
+      return () => window.removeEventListener("resize", resize);
     }
 
     setBloodFloor(systemRef.current, window.innerHeight - 8);
     lastTime.current = 0;
+
+    const draw = (ctx, sys) => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      for (const p of sys.particles) {
+        const alpha = Math.max(0, Math.min(1, p.life / Math.max(0.01, p.maxLife)));
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rot * Math.PI) / 180);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "#a00000";
+        ctx.beginPath();
+        ctx.ellipse(0, 0, p.width * 0.55, p.height * 0.55, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    };
 
     const loop = (time) => {
       if (!lastTime.current) lastTime.current = time;
@@ -75,14 +105,19 @@ const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
       lastTime.current = time;
       const dtNorm = dt / 16.67;
 
-      stepBlood(systemRef.current, dtNorm);
-      setParticles(bloodSnapshot(systemRef.current));
+      const sys = systemRef.current;
+      stepBlood(sys, dtNorm);
+
+      const ctx = canvas.getContext("2d");
+      if (ctx) draw(ctx, sys);
+
       rafRef.current = requestAnimationFrame(loop);
     };
 
     rafRef.current = requestAnimationFrame(loop);
 
     return () => {
+      window.removeEventListener("resize", resize);
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -90,24 +125,7 @@ const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
     };
   }, [active]);
 
-  return (
-    <div className={styles.layer}>
-      {particles.map((p) => (
-        <span
-          key={p.id}
-          className={styles.drop}
-          style={{
-            left: p.x,
-            top: p.y,
-            width: p.width,
-            height: p.height,
-            opacity: p.opacity,
-            transform: `translate(-50%, -50%) rotate(${p.rot}deg)`,
-          }}
-        />
-      ))}
-    </div>
-  );
+  return <canvas ref={canvasRef} className={styles.layer} />;
 });
 
 export default BloodLayer;
