@@ -1,6 +1,5 @@
 /**
  * Colisão jogador (AABB) × spike (triângulo).
- * Usa epsilon, pontos de amostra no corpo e interseção de segmentos.
  */
 
 const EPS = 0.5;
@@ -9,7 +8,6 @@ function sign(p1, p2, p3) {
   return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
 }
 
-/** Ponto dentro do triângulo (barycentric / same-side), com margem EPS */
 export function pointInTriangle(point, triangle) {
   const [a, b, c] = triangle;
   const b1 = sign(point, a, b) < EPS;
@@ -23,11 +21,12 @@ function segmentsIntersect(a, b, c, d) {
   const d2 = sign(c, d, b);
   const d3 = sign(a, b, c);
   const d4 = sign(a, b, d);
-  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+  if (
+    ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+    ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+  ) {
     return true;
   }
-  // colinear / toque
   if (Math.abs(d1) < EPS && onSegment(c, d, a)) return true;
   if (Math.abs(d2) < EPS && onSegment(c, d, b)) return true;
   if (Math.abs(d3) < EPS && onSegment(a, b, c)) return true;
@@ -44,20 +43,14 @@ function onSegment(a, b, p) {
   );
 }
 
-/** Amostra pontos no corpo do player (não só os 4 cantos) */
 function samplePlayerPoints(player) {
   const { x, y, width: w, height: h } = player;
   const pts = [];
-  // grade 3x4 cobre torso/cabeça/pernas
   for (let iy = 0; iy <= 3; iy++) {
     for (let ix = 0; ix <= 2; ix++) {
-      pts.push({
-        x: x + (w * ix) / 2,
-        y: y + (h * iy) / 3,
-      });
+      pts.push({ x: x + (w * ix) / 2, y: y + (h * iy) / 3 });
     }
   }
-  // centro
   pts.push({ x: x + w * 0.5, y: y + h * 0.5 });
   return pts;
 }
@@ -76,21 +69,11 @@ function playerEdges(player) {
   ];
 }
 
-/**
- * @param {{x,y,width,height}} player
- * @param {{points: [{x,y},{x,y},{x,y}], side?: string, index?: number}} spike
- * @returns {boolean}
- */
 export function isPlayerCollidingWithSpike(player, spike) {
   if (!player || !spike?.points || spike.points.length < 3) return false;
-
   const tri = spike.points;
-
-  // 1) qualquer amostra do corpo dentro do triângulo
   const samples = samplePlayerPoints(player);
   if (samples.some((p) => pointInTriangle(p, tri))) return true;
-
-  // 2) vértice do spike dentro do AABB do player
   for (const v of tri) {
     if (
       v.x >= player.x - EPS &&
@@ -101,8 +84,6 @@ export function isPlayerCollidingWithSpike(player, spike) {
       return true;
     }
   }
-
-  // 3) arestas se cruzam
   const edges = playerEdges(player);
   const triEdges = [
     [tri[0], tri[1]],
@@ -114,27 +95,54 @@ export function isPlayerCollidingWithSpike(player, spike) {
       if (segmentsIntersect(a, b, c, d)) return true;
     }
   }
-
   return false;
 }
 
 /**
- * Testa lista de hitboxes e devolve info do primeiro hit.
- * @returns {null | { side, index, hitbox, contactY }}
+ * Região do contato: "tip" (perto da ponta) ou "base" (perto da base).
+ * top spike: tip embaixo; bottom spike: tip em cima.
  */
+function contactRegion(player, hb) {
+  if (!hb?.tip) return "tip";
+  const tip = hb.tip;
+  const cx = player.x + player.width * 0.5;
+  // para top: usa topo da cabeça; para bottom: usa centro/pés
+  const cy =
+    hb.side === "top"
+      ? player.y + player.height * 0.15
+      : player.y + player.height * 0.55;
+
+  const distTip = Math.hypot(cx - tip.x, cy - tip.y);
+
+  // base = média dos dois vértices que não são a ponta
+  const basePts = hb.points.filter(
+    (p) => Math.hypot(p.x - tip.x, p.y - tip.y) > 2
+  );
+  let bx = tip.x;
+  let by = tip.y;
+  if (basePts.length) {
+    bx = basePts.reduce((s, p) => s + p.x, 0) / basePts.length;
+    by = basePts.reduce((s, p) => s + p.y, 0) / basePts.length;
+  }
+  const distBase = Math.hypot(cx - bx, cy - by);
+
+  // threshold: se bem perto da ponta → tip
+  if (distTip < 36) return "tip";
+  if (distTip < distBase * 0.85) return "tip";
+  return "base";
+}
+
 export function findSpikeCollision(player, hitboxes) {
   for (let i = 0; i < hitboxes.length; i++) {
     const hb = hitboxes[i];
     if (isPlayerCollidingWithSpike(player, hb)) {
-      // y médio do triângulo como referência de contato
-      const cy =
-        (hb.points[0].y + hb.points[1].y + hb.points[2].y) / 3;
+      const region = contactRegion(player, hb);
       return {
         side: hb.side ?? "unknown",
         index: hb.index ?? i,
         hitbox: hb,
-        contactY: cy,
         tip: hb.tip ?? null,
+        region, // "tip" | "base"
       };
     }
   }

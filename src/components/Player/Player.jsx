@@ -16,6 +16,14 @@ import {
  */
 
 const LIMB_ORDER = ["legLeft", "legRight", "armLeft", "armRight"];
+
+const LIMB_DETACH = {
+  legLeft: { ox: 12, oy: 52, w: 10, h: 22, kind: "leg" },
+  legRight: { ox: 30, oy: 52, w: 10, h: 22, kind: "leg" },
+  armLeft: { ox: 2, oy: 28, w: 9, h: 18, kind: "arm" },
+  armRight: { ox: 38, oy: 28, w: 9, h: 18, kind: "arm" },
+};
+
 const LIMB_HP = 3;
 const LIMB_MAX_HOLES = 2;
 
@@ -146,6 +154,7 @@ function Player({
   drawY,
   shotTick = 0,
   deathType = "none",
+  deathSpike = null,
   velocityY = 0,
   moveSpeed = 0,
   playerX = 300,
@@ -156,6 +165,8 @@ function Player({
   const [ragdollPose, setRagdollPose] = useState(null);
   const [limbs, setLimbs] = useState(emptyLimbState);
   const [vitalIndex, setVitalIndex] = useState(0);
+  const [detachedLimbs, setDetachedLimbs] = useState([]); // membros isolados caindo
+  const detachedRef = useRef([]);
   const [recoil, setRecoil] = useState({ rot: 0, kick: 0 }); // reação ao tiro
   const recoilRef = useRef({ rot: 0, kick: 0 });
 
@@ -207,6 +218,27 @@ function Player({
       if (limb.hits >= LIMB_HP) {
         limb.severed = true;
         severedNow = true;
+
+        // membro isolado que cai sangrando
+        const det = LIMB_DETACH[nextLimb];
+        if (det) {
+          const piece = {
+            id: `${nextLimb}-${Date.now()}`,
+            part: nextLimb,
+            kind: det.kind,
+            x: playerX + det.ox,
+            y: drawYRef.current + det.oy,
+            vx: -2 - Math.random() * 3 - moveSpeedRef.current * 0.15,
+            vy: -1 + Math.random() * 2,
+            rot: (Math.random() - 0.5) * 40,
+            vr: (Math.random() - 0.5) * 8,
+            w: det.w,
+            h: det.h,
+            life: 8,
+          };
+          detachedRef.current = [...detachedRef.current, piece].slice(-6);
+          setDetachedLimbs(detachedRef.current);
+        }
       }
 
       setLimbs(L);
@@ -304,10 +336,12 @@ function Player({
     const ceilingY = 5;
 
     const L = limbsRef.current;
+    const tipX = deathSpike?.tipX ?? playerX + 24;
     const tipY =
-      deathType === "spike_side"
-        ? drawYRef.current + 20
-        : window.innerHeight - 64;
+      deathSpike?.tipY ??
+      (deathType === "spike_hang"
+        ? 60
+        : window.innerHeight - 64);
     const rd = createRagdoll(playerX, drawYRef.current, {
       deathType,
       velocityY: velocityRef.current,
@@ -320,8 +354,9 @@ function Player({
         armLeft: L.armLeft.severed,
         armRight: L.armRight.severed,
       },
-      spikeTipX: playerX + 24,
+      spikeTipX: tipX,
       spikeTipY: tipY,
+      spikeSide: deathSpike?.side ?? "bottom",
     });
     ragdollRef.current = rd;
     setRagdollPose(ragdollSnapshot(rd));
@@ -358,7 +393,7 @@ function Player({
         ragdollRaf.current = null;
       }
     };
-  }, [deathType, playerX]);
+  }, [deathType, playerX, deathSpike]);
 
   useEffect(() => {
     if (deathType === "none" && shotTick === 0) {
@@ -372,8 +407,75 @@ function Player({
       vitalRef.current = 0;
       recoilRef.current = { rot: 0, kick: 0 };
       setRecoil({ rot: 0, kick: 0 });
+      detachedRef.current = [];
+      setDetachedLimbs([]);
     }
   }, [deathType, shotTick]);
+
+
+  // membros isolados: física + sangue
+  useEffect(() => {
+    let raf = null;
+    let last = 0;
+    let bleedAcc = 0;
+    const floorY = () => window.innerHeight - 10;
+
+    const loop = (time) => {
+      if (!last) last = time;
+      const dt = Math.min(time - last, 40);
+      last = time;
+      const dtN = dt / 16.67;
+      bleedAcc += dt;
+
+      let list = detachedRef.current;
+      if (list.length) {
+        const next = [];
+        for (const piece of list) {
+          piece.vy += 0.35 * dtN;
+          piece.vx *= 0.995;
+          piece.x += piece.vx * dtN;
+          piece.y += piece.vy * dtN;
+          piece.rot += piece.vr * dtN;
+          piece.life -= dtN * 0.016;
+
+          if (piece.y + piece.h > floorY()) {
+            piece.y = floorY() - piece.h;
+            piece.vy *= -0.2;
+            piece.vx *= 0.7;
+            piece.vr *= 0.5;
+            if (Math.abs(piece.vy) < 0.5) piece.vy = 0;
+          }
+
+          if (piece.life > 0) next.push(piece);
+        }
+        detachedRef.current = next;
+        setDetachedLimbs(next);
+
+        // sangue contínuo de cada membro no chão / caindo
+        if (bleedAcc >= 90 && next.length) {
+          bleedAcc = 0;
+          const piece = next[Math.floor(Math.random() * next.length)];
+          bloodRef?.current?.drip({
+            x: piece.x + piece.w * 0.5,
+            y: piece.y + 4,
+            velocityY: piece.vy,
+            moveSpeed: Math.abs(piece.vx),
+            count: 2,
+            power: 0.8,
+          });
+        }
+      }
+
+      raf = requestAnimationFrame(loop);
+    };
+
+    if (detachedRef.current.length > 0 || detachedLimbs.length > 0) {
+      raf = requestAnimationFrame(loop);
+    }
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [detachedLimbs.length, bloodRef]);
 
   // ---- sangramento contínuo (sem pausa) via rAF ----
   useEffect(() => {
@@ -555,6 +657,24 @@ function Player({
           )}
         </div>
 
+
+      {detachedLimbs.map((piece) => (
+        <div
+          key={piece.id}
+          className={
+            piece.kind === "leg" ? styles.detachedLeg : styles.detachedArm
+          }
+          style={{
+            position: "absolute",
+            left: piece.x,
+            top: piece.y,
+            width: piece.w,
+            height: piece.h,
+            transform: `rotate(${piece.rot}deg)`,
+          }}
+        />
+      ))}
+
         {bloodSpray.map((d) => (
           <span
             key={d.id}
@@ -579,6 +699,7 @@ function Player({
   }
 
   return (
+    <>
     <div
       className={styles.player}
       style={{
@@ -632,6 +753,25 @@ function Player({
         />
       ))}
     </div>
+
+      {/* membros isolados em coords de mundo */}
+      {detachedLimbs.map((piece) => (
+        <div
+          key={piece.id}
+          className={
+            piece.kind === "leg" ? styles.detachedLeg : styles.detachedArm
+          }
+          style={{
+            position: "absolute",
+            left: piece.x,
+            top: piece.y,
+            width: piece.w,
+            height: piece.h,
+            transform: `rotate(${piece.rot}deg)`,
+          }}
+        />
+      ))}
+    </>
   );
 }
 

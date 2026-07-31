@@ -57,7 +57,8 @@ function App() {
   const [ammo, setAmmo] = useState(0);
   const [isReloading, setIsReloading] = useState(false);
   const [shotTick, setShotTick] = useState(0);
-  const [deathType, setDeathType] = useState("none"); // none | spike_side | spike_top | stall
+  const [deathType, setDeathType] = useState("none"); // none | spike_side | spike_hang | spike_impale | stall
+  const [deathSpike, setDeathSpike] = useState(null); // { tipX, tipY, side }
   const [velocityY, setVelocityY] = useState(0);
 
   // debug
@@ -155,6 +156,7 @@ function App() {
       deathDelayTimeout.current = null;
     }
     setDeathType("none");
+    setDeathSpike(null);
     setShotTick(0);
     setVelocityY(0);
     bloodRef.current?.clear();
@@ -181,6 +183,7 @@ function App() {
       deathDelayTimeout.current = null;
     }
     setDeathType("none");
+    setDeathSpike(null);
     setShotTick(0);
     setVelocityY(0);
     bloodRef.current?.clear();
@@ -332,20 +335,24 @@ function App() {
 
     if (hitTop || hitBottom) {
       isDeadRef.current = true;
-      // classifica morte pelo contato (refinado depois nas animações)
+      // regras:
+      // - spike de BAIXO (qualquer contato / cair em cima) → impale
+      // - spike de CIMA na PONTA → hang pela cabeça, depois cai
+      // - spike de CIMA na BASE → impale
+      const hit = hitBottom || hitTop;
       let type = "spike_side";
       if (hitBottom) {
-        const tipY = hitBottom.tip ? hitBottom.tip.y : window.innerHeight - 64;
-        const playerMid = player.y + player.height * 0.5;
-        // perto da ponta → hang; mais enfiado no spike → impale
-        if (playerMid <= tipY + 30) {
-          type = "spike_hang";
-        } else {
-          type = "spike_impale";
-        }
+        type = "spike_impale";
       } else if (hitTop) {
-        type = "spike_side";
+        type = hitTop.region === "tip" ? "spike_hang" : "spike_impale";
       }
+      const tip = hit.tip || { x: player.x + player.width / 2, y: player.y };
+      setDeathSpike({
+        tipX: tip.x,
+        tipY: tip.y,
+        side: hit.side,
+        region: hit.region || "tip",
+      });
       setDeathType(type);
       setGameState(GAME_STATE.DYING);
 
@@ -529,6 +536,7 @@ function App() {
             drawY={drawY}
             shotTick={shotTick}
             deathType={deathType}
+            deathSpike={deathSpike}
             velocityY={velocityY}
             moveSpeed={displaySpeed}
             bloodRef={bloodRef}

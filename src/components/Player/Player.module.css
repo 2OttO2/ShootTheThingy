@@ -473,3 +473,46 @@
   border-radius: 3px;
 }
 
+/* ===== membros isolados (caindo) ===== */
+.detachedArm,
+.detachedLeg {
+  position: absolute;
+  z-index: 26;
+  pointer-events: none;
+  border: 2px solid #333;
+  transform-origin: center center;
+  box-shadow: 0 0 0 1px rgba(120, 0, 0, 0.5);
+}
+
+.detachedArm {
+  background: #f5d0a9;
+  border-radius: 4px;
+}
+
+.detachedArm::after {
+  content: "";
+  position: absolute;
+  left: 20%;
+  top: 0;
+  width: 60%;
+  height: 4px;
+  background: #8b0000;
+  border-radius: 2px;
+}
+
+.detachedLeg {
+  background: #2d3436;
+  border-radius: 3px;
+}
+
+.detachedLeg::after {
+  content: "";
+  position: absolute;
+  left: 15%;
+  top: 0;
+  width: 70%;
+  height: 5px;
+  background: #8b0000;
+  border-radius: 2px;
+}
+

@@ -1,6 +1,8 @@
 /**
  * Ragdoll 2D — Verlet + constraints.
- * Respeita membros seccionados e modos de morte no spike.
+ * spike_hang = pendurado pela CABEÇA (ponta do spike do teto)
+ * spike_impale = corpo atravessado (spike de baixo ou base)
+ * spike_side = chute / tombo lateral
  */
 
 const GRAVITY = 0.45;
@@ -24,15 +26,6 @@ function stick(a, b, length = null, stiffness = 1) {
   };
 }
 
-/**
- * @param {number} x - left do player
- * @param {number} y - top (drawY)
- * @param {object} opts
- * @param {string} opts.deathType - spike_side | spike_impale | spike_hang | spike_top | stall
- * @param {object} opts.severed - { legLeft, legRight, armLeft, armRight }
- * @param {number} opts.spikeTipX - x da ponta do spike (impale/hang)
- * @param {number} opts.spikeTipY - y da ponta do spike
- */
 export function createRagdoll(x, y, opts = {}) {
   const {
     deathType = "stall",
@@ -43,6 +36,7 @@ export function createRagdoll(x, y, opts = {}) {
     severed = {},
     spikeTipX = null,
     spikeTipY = null,
+    spikeSide = "bottom",
   } = opts;
 
   const sev = {
@@ -68,7 +62,6 @@ export function createRagdoll(x, y, opts = {}) {
   const lFoot = point(cx - 10, top + 70);
   const rFoot = point(cx + 10, top + 70);
 
-  // pontos ativos (membros seccionados ficam fora da simulação visual)
   const points = [head, chest, hip, lShoulder, rShoulder];
   if (!sev.armLeft) points.push(lHand);
   if (!sev.armRight) points.push(rHand);
@@ -86,7 +79,6 @@ export function createRagdoll(x, y, opts = {}) {
     stick(chest, rShoulder, 12 * s, 0.95),
     stick(lShoulder, rShoulder, 22 * s, 0.7),
   ];
-
   if (!sev.armLeft) sticks.push(stick(lShoulder, lHand, 18 * s, 0.9));
   if (!sev.armRight) sticks.push(stick(rShoulder, rHand, 18 * s, 0.9));
   if (!sev.legLeft) {
@@ -101,9 +93,8 @@ export function createRagdoll(x, y, opts = {}) {
     sticks.push(stick(lKnee, rKnee, 16 * s, 0.4));
   }
 
-  const baseVx = -moveSpeed * 1.8 - 1.5;
-  let baseVy = velocityY * 0.35;
-
+  const baseVx = -moveSpeed * 1.5 - 1.2;
+  const baseVy = velocityY * 0.3;
   const impulses = new Map();
   for (const p of points) {
     impulses.set(p, {
@@ -115,74 +106,81 @@ export function createRagdoll(x, y, opts = {}) {
   const tipX = spikeTipX ?? cx;
   const tipY = spikeTipY ?? top + 40;
 
-  if (deathType === "spike_side") {
-    // morte de lado — kick forte nas pernas
-    const side = -1; // cai pra trás (esquerda)
+  if (deathType === "spike_hang") {
+    // pendurado pela CABEÇA na ponta do spike do teto
+    head.x = tipX;
+    head.y = tipY;
+    head.ox = tipX;
+    head.oy = tipY;
+    head.pinned = true;
+    // corpo pendura pra baixo
+    chest.x = tipX + (Math.random() - 0.5) * 4;
+    chest.y = tipY + 18;
+    hip.x = tipX + (Math.random() - 0.5) * 6;
+    hip.y = tipY + 40;
+    impulses.get(chest).vy += 2;
+    impulses.get(hip).vy += 4;
+    if (!sev.legLeft) {
+      impulses.get(lFoot).vx -= 5;
+      impulses.get(lFoot).vy += 6;
+    }
+    if (!sev.legRight) {
+      impulses.get(rFoot).vx += 5;
+      impulses.get(rFoot).vy += 6;
+    }
+    if (!sev.armLeft) impulses.get(lHand).vx -= 4;
+    if (!sev.armRight) impulses.get(rHand).vx += 4;
+  } else if (deathType === "spike_impale" || deathType === "spike_top") {
+    // impale — peito na ponta (baixo) ou base
+    if (spikeSide === "top") {
+      // enfiado na base do spike de cima — peito alto
+      chest.x = tipX;
+      chest.y = Math.max(12, tipY - 40);
+      chest.ox = chest.x;
+      chest.oy = chest.y;
+      chest.pinned = true;
+      head.x = tipX;
+      head.y = chest.y - 16;
+    } else {
+      // spike de baixo atravessa o torso
+      chest.x = tipX;
+      chest.y = tipY + 10;
+      chest.ox = tipX;
+      chest.oy = tipY + 10;
+      chest.pinned = true;
+      hip.x = tipX;
+      hip.y = tipY + 28;
+      hip.ox = tipX;
+      hip.oy = tipY + 28;
+    }
+    impulses.get(head).vx += (Math.random() - 0.5) * 5;
+    if (!sev.legLeft) {
+      impulses.get(lFoot).vx -= 9;
+      impulses.get(lFoot).vy += 3;
+    }
+    if (!sev.legRight) {
+      impulses.get(rFoot).vx += 9;
+      impulses.get(rFoot).vy += 3;
+    }
+    if (!sev.armLeft) impulses.get(lHand).vx -= 8;
+    if (!sev.armRight) impulses.get(rHand).vx += 8;
+  } else if (deathType === "spike_side") {
+    const side = -1;
     impulses.get(head).vx += side * 8;
     impulses.get(head).vy -= 4;
     impulses.get(chest).vx += side * 6;
     impulses.get(hip).vx += side * 3;
     if (!sev.legLeft) {
-      impulses.get(lKnee).vx += side * 4;
-      impulses.get(lFoot).vx -= side * 14; // chute
+      impulses.get(lFoot).vx -= side * 14;
       impulses.get(lFoot).vy -= 8;
     }
     if (!sev.legRight) {
-      impulses.get(rKnee).vx += side * 2;
       impulses.get(rFoot).vx -= side * 16;
       impulses.get(rFoot).vy -= 10;
     }
-    if (!sev.armLeft) {
-      impulses.get(lHand).vx += side * 10;
-      impulses.get(lHand).vy -= 5;
-    }
-    if (!sev.armRight) {
-      impulses.get(rHand).vx -= side * 6;
-      impulses.get(rHand).vy -= 3;
-    }
-  } else if (deathType === "spike_impale" || deathType === "spike_top") {
-    // corpo atravessado — pin chest no tip, braços/pernas se agitam
-    chest.x = tipX;
-    chest.y = tipY + 8;
-    chest.ox = tipX;
-    chest.oy = tipY + 8;
-    chest.pinned = true;
-    hip.x = tipX;
-    hip.y = tipY + 28;
-    hip.ox = tipX;
-    hip.oy = tipY + 28;
-    // hip semi-preso (atualizado no step)
-    impulses.get(head).vy -= 2;
-    impulses.get(head).vx += (Math.random() - 0.5) * 4;
-    if (!sev.legLeft) {
-      impulses.get(lFoot).vx -= 8 + Math.random() * 4;
-      impulses.get(lFoot).vy += 2;
-    }
-    if (!sev.legRight) {
-      impulses.get(rFoot).vx += 8 + Math.random() * 4;
-      impulses.get(rFoot).vy += 2;
-    }
-    if (!sev.armLeft) impulses.get(lHand).vx -= 7;
-    if (!sev.armRight) impulses.get(rHand).vx += 7;
-  } else if (deathType === "spike_hang") {
-    // pendurado pela parte que tocou (peito), depois solta
-    chest.x = tipX;
-    chest.y = tipY;
-    chest.ox = tipX;
-    chest.oy = tipY;
-    chest.pinned = true;
-    impulses.get(hip).vy += 3;
-    impulses.get(head).vy -= 1;
-    if (!sev.legLeft) {
-      impulses.get(lFoot).vx -= 6;
-      impulses.get(lFoot).vy += 4;
-    }
-    if (!sev.legRight) {
-      impulses.get(rFoot).vx += 6;
-      impulses.get(rFoot).vy += 4;
-    }
+    if (!sev.armLeft) impulses.get(lHand).vx += side * 10;
+    if (!sev.armRight) impulses.get(rHand).vx -= side * 6;
   } else {
-    // stall
     for (const imp of impulses.values()) {
       imp.vx *= 0.4;
       imp.vy = Math.max(imp.vy, 1) + Math.random();
@@ -203,11 +201,10 @@ export function createRagdoll(x, y, opts = {}) {
     ceilingY,
     alive: true,
     deathType,
+    spikeSide,
     severed: sev,
-    // hang: solta após timer
-    hangTimer: deathType === "spike_hang" ? 0.9 : 0, // segundos
+    hangTimer: deathType === "spike_hang" ? 1.4 : 0,
     hangReleased: false,
-    // impale: mantém peito no tip
     spikeTipX: tipX,
     spikeTipY: tipY,
     parts: {
@@ -276,42 +273,42 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
   const damp = Math.pow(DAMPING, dtNorm);
   const dtSec = dtNorm * (16.67 / 1000);
 
-  // hang: solta o pin depois de um tempo → cai
+  // hang pela CABEÇA
   if (ragdoll.deathType === "spike_hang" && !ragdoll.hangReleased) {
     ragdoll.hangTimer -= dtSec;
-    // mantém peito na ponta enquanto pendurado
-    const c = ragdoll.parts.chest;
-    c.x = ragdoll.spikeTipX;
-    c.y = ragdoll.spikeTipY;
-    c.ox = c.x;
-    c.oy = c.y;
-    c.pinned = true;
+    const h = ragdoll.parts.head;
+    h.x = ragdoll.spikeTipX;
+    h.y = ragdoll.spikeTipY;
+    h.ox = h.x;
+    h.oy = h.y;
+    h.pinned = true;
 
     if (ragdoll.hangTimer <= 0) {
       ragdoll.hangReleased = true;
-      c.pinned = false;
-      // impulso de queda + corpo ainda “atravessado” um instante
-      c.oy = c.y - 2;
+      h.pinned = false;
+      // solta e cai
+      h.oy = h.y - 1.5;
+      ragdoll.parts.chest.oy = ragdoll.parts.chest.y - 2;
       ragdoll.parts.hip.oy = ragdoll.parts.hip.y - 3;
     }
   }
 
-  // impale: mantém peito/hip no eixo do spike
-  if (
-    ragdoll.deathType === "spike_impale" ||
-    ragdoll.deathType === "spike_top"
-  ) {
+  // impale
+  if (ragdoll.deathType === "spike_impale" || ragdoll.deathType === "spike_top") {
     const c = ragdoll.parts.chest;
     c.x = ragdoll.spikeTipX;
-    c.y = Math.min(c.y, ragdoll.spikeTipY + 12);
-    // desliza devagar no spike
-    c.y += 0.15 * dtNorm;
+    if (ragdoll.spikeSide === "bottom") {
+      c.y = Math.min(c.y + 0.12 * dtNorm, ragdoll.spikeTipY + 36);
+    } else {
+      // preso mais pra cima no spike do teto
+      c.y = Math.max(c.y, 16);
+    }
     c.ox = c.x;
     c.oy = c.y;
     c.pinned = true;
 
-    const h = ragdoll.parts.hip;
-    h.x = ragdoll.spikeTipX + (h.x - ragdoll.spikeTipX) * 0.3;
+    const hip = ragdoll.parts.hip;
+    hip.x = ragdoll.spikeTipX + (hip.x - ragdoll.spikeTipX) * 0.25;
   }
 
   for (const p of points) {
