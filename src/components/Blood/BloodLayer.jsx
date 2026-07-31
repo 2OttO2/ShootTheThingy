@@ -95,7 +95,7 @@ const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
       {particles.map((p) => (
         <span
           key={p.id}
-          className={`${styles.drop} ${p.settled ? styles.settled : ""} ${p.pool ? styles.pool : ""}`}
+          className={styles.drop}
           style={{
             left: p.x,
             top: p.y,

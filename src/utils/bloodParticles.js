@@ -27,7 +27,6 @@ function createParticle(x, y, vx, vy, opts = {}) {
     rot: opts.rot ?? (Math.atan2(vy, vx) * 180) / Math.PI + 90,
     streak: !!opts.streak,
     settled: false,
-    pool: !!opts.pool, // mancha no chão mais durável
   };
 }
 
@@ -149,11 +148,7 @@ export function bloodBurst(system, x, y, opts = {}) {
   }
 
   if (system.particles.length > MAX_PARTICLES) {
-    // remove as mais antigas que já settled primeiro
-    system.particles.sort((a, b) => {
-      if (a.settled !== b.settled) return a.settled ? -1 : 1;
-      return a.life - b.life;
-    });
+    system.particles.sort((a, b) => a.life - b.life);
     system.particles.splice(0, system.particles.length - MAX_PARTICLES);
   }
 }
@@ -212,22 +207,9 @@ export function stepBlood(system, dtNorm = 1) {
         p.rot = (Math.atan2(p.vy, p.vx) * 180) / Math.PI + 90;
       }
 
+      // ao tocar o chão: some (sem poça/mancha)
       if (p.y + p.height * 0.5 > floorY) {
-        p.y = floorY - p.height * 0.5;
-        p.vy *= -0.22;
-        p.vx *= FLOOR_FRICTION;
-        if (Math.abs(p.vy) < 0.7 && Math.abs(p.vx) < 0.55) {
-          p.settled = true;
-          p.vx = 0;
-          p.vy = 0;
-          p.height = Math.max(1.5, p.height * 0.3);
-          p.width = p.width * (1.4 + Math.random() * 0.8);
-          p.streak = false;
-          p.pool = true;
-          // manchas duram bem mais
-          p.life = Math.max(p.life, 2.5 + Math.random() * 3);
-          p.maxLife = p.life;
-        }
+        continue;
       }
 
       if (p.y < 4) {
@@ -235,8 +217,7 @@ export function stepBlood(system, dtNorm = 1) {
         p.vy *= -0.28;
       }
     } else {
-      // poça some bem devagar
-      p.life -= dtNorm * (p.pool ? 0.004 : 0.01);
+      p.life -= dtNorm * 0.02;
     }
 
     if (p.life > 0) alive.push(p);
@@ -256,7 +237,6 @@ export function bloodSnapshot(system) {
     rot: p.rot,
     opacity: Math.max(0, Math.min(1, p.life / Math.max(0.01, p.maxLife))),
     settled: p.settled,
-    pool: p.pool,
   }));
 }
 
