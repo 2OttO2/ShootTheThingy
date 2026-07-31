@@ -345,7 +345,6 @@ function Player({
     const rd = createRagdoll(playerX, drawYRef.current, {
       deathType,
       velocityY: velocityRef.current,
-      moveSpeed: moveSpeedRef.current,
       floorY,
       ceilingY,
       severed: {
@@ -357,6 +356,8 @@ function Player({
       spikeTipX: tipX,
       spikeTipY: tipY,
       spikeSide: deathSpike?.side ?? "bottom",
+      offsetX: deathSpike?.offsetX ?? 0,
+      impact: deathSpike?.impact ?? 1,
     });
     ragdollRef.current = rd;
     setRagdollPose(ragdollSnapshot(rd));
@@ -430,12 +431,11 @@ function Player({
       let list = detachedRef.current;
       if (list.length) {
         const next = [];
-        const scroll = Math.max(0, moveSpeedRef.current) * dtN * 1.15;
         for (const piece of list) {
           piece.vy += 0.35 * dtN;
           piece.vx *= 0.995;
-          // física + scroll do cenário (some pra esquerda)
-          piece.x += piece.vx * dtN - scroll;
+          // sem scroll do mapa — player é fixo na tela
+          piece.x += piece.vx * dtN;
           piece.y += piece.vy * dtN;
           piece.rot += piece.vr * dtN;
           piece.life -= dtN * 0.016;
@@ -780,4 +780,5 @@ function Player({
 }
 
 export default Player;
+
 

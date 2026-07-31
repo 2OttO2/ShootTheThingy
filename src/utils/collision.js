@@ -72,8 +72,7 @@ function playerEdges(player) {
 export function isPlayerCollidingWithSpike(player, spike) {
   if (!player || !spike?.points || spike.points.length < 3) return false;
   const tri = spike.points;
-  const samples = samplePlayerPoints(player);
-  if (samples.some((p) => pointInTriangle(p, tri))) return true;
+  if (samplePlayerPoints(player).some((p) => pointInTriangle(p, tri))) return true;
   for (const v of tri) {
     if (
       v.x >= player.x - EPS &&
@@ -98,22 +97,16 @@ export function isPlayerCollidingWithSpike(player, spike) {
   return false;
 }
 
-/**
- * Região do contato: "tip" (perto da ponta) ou "base" (perto da base).
- * top spike: tip embaixo; bottom spike: tip em cima.
- */
 function contactRegion(player, hb) {
   if (!hb?.tip) return "tip";
   const tip = hb.tip;
   const cx = player.x + player.width * 0.5;
-  // top: cabeça; bottom: centro-baixo (cai na ponta)
   const cy =
     hb.side === "top"
       ? player.y + player.height * 0.2
       : player.y + player.height * 0.65;
 
   const distTip = Math.hypot(cx - tip.x, cy - tip.y);
-
   const basePts = hb.points.filter(
     (p) => Math.hypot(p.x - tip.x, p.y - tip.y) > 2
   );
@@ -125,29 +118,45 @@ function contactRegion(player, hb) {
   }
   const distBase = Math.hypot(cx - bx, cy - by);
 
-  // ponta = terço superior do triângulo (perto do tip)
-  // para bottom: se o centro do player está acima da metade do spike → tip
   if (hb.side === "bottom") {
     const midY = (tip.y + by) / 2;
     if (cy <= midY + 8 || distTip < distBase) return "tip";
     return "base";
   }
-  // top: se a cabeça está perto da ponta (embaixo do spike) → tip
   if (distTip < 42 || distTip < distBase * 0.9) return "tip";
   return "base";
+}
+
+/** Parte do corpo mais próxima da ponta: head | torso | legs */
+function contactBodyPart(player, hb) {
+  if (!hb?.tip) return "torso";
+  const tip = hb.tip;
+  const headY = player.y + player.height * 0.15;
+  const torsoY = player.y + player.height * 0.45;
+  const legsY = player.y + player.height * 0.8;
+  const dHead = Math.abs(tip.y - headY);
+  const dTorso = Math.abs(tip.y - torsoY);
+  const dLegs = Math.abs(tip.y - legsY);
+  if (dHead <= dTorso && dHead <= dLegs) return "head";
+  if (dLegs <= dTorso) return "legs";
+  return "torso";
 }
 
 export function findSpikeCollision(player, hitboxes) {
   for (let i = 0; i < hitboxes.length; i++) {
     const hb = hitboxes[i];
     if (isPlayerCollidingWithSpike(player, hb)) {
-      const region = contactRegion(player, hb);
+      const tip = hb.tip ?? null;
+      const cx = player.x + player.width * 0.5;
+      const offsetX = tip ? cx - tip.x : 0;
       return {
         side: hb.side ?? "unknown",
         index: hb.index ?? i,
         hitbox: hb,
-        tip: hb.tip ?? null,
-        region, // "tip" | "base"
+        tip,
+        region: contactRegion(player, hb),
+        bodyPart: contactBodyPart(player, hb),
+        offsetX, // <0 bateu lado esquerdo da ponta
       };
     }
   }

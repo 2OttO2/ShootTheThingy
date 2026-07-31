@@ -335,30 +335,45 @@ function App() {
 
     if (hitTop || hitBottom) {
       isDeadRef.current = true;
-      // congela o “correr” do mapa — ragdoll não deve herdar speed horizontal
       momentum.current = 0;
       gameSpeed.current = 0;
       setDisplaySpeed(0);
 
-      // regras:
-      // - CIMA + ponta  → hang
-      // - BAIXO + ponta → impale
-      // - base (cima/baixo) → loose
+      // Happy Wheels-ish: tipo depende de lado + região + parte do corpo + impacto
       const hit = hitBottom || hitTop;
-      let type = "spike_loose";
-      if (hitTop && !hitBottom && hitTop.region === "tip") type = "spike_hang";
-      else if (hitBottom && hitBottom.region === "tip") type = "spike_impale";
-      else if (hitBottom && hitBottom.region === "base") type = "spike_loose";
-      else if (hitTop && hitTop.region === "base") type = "spike_loose";
-      else if (hitBottom) type = "spike_impale"; // fallback baixo
-      else type = "spike_hang"; // fallback cima
+      const region = hit.region || "tip";
+      const part = hit.bodyPart || "torso";
+      const absVy = Math.abs(speed.current);
+      const impact = Math.max(0.7, Math.min(2.1, 0.7 + absVy / 14));
+      const absOff = Math.abs(hit.offsetX || 0);
+
+      let type = "spike_flop";
+      if (hit.side === "top") {
+        if (region === "tip" && part === "head") type = "spike_hang";
+        else if (region === "tip" && part === "torso") type = "spike_impale";
+        else if (region === "tip" && part === "legs") type = "spike_spin";
+        else if (region === "base" && absOff > 12) type = "spike_spin";
+        else if (region === "base") type = "spike_bounce";
+        else type = "spike_hang";
+      } else {
+        // bottom
+        if (region === "tip" && part === "legs") type = "spike_impale_leg";
+        else if (region === "tip" && part === "head") type = "spike_spin";
+        else if (region === "tip") type = "spike_impale";
+        else if (region === "base" && absVy > 10) type = "spike_bounce";
+        else if (region === "base" && absOff > 14) type = "spike_spin";
+        else type = "spike_flop";
+      }
 
       const tip = hit.tip || { x: player.x + player.width / 2, y: player.y };
       setDeathSpike({
         tipX: tip.x,
         tipY: tip.y,
         side: hit.side,
-        region: hit.region || "tip",
+        region,
+        bodyPart: part,
+        offsetX: hit.offsetX || 0,
+        impact,
       });
       setDeathType(type);
       setGameState(GAME_STATE.DYING);
