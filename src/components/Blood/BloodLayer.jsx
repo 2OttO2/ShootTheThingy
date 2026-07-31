@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
+import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
 import styles from "./BloodLayer.module.css";
 import {
   createBloodSystem,
   bloodBurst,
   bloodDrip,
+  bloodArterial,
+  bloodStump,
   stepBlood,
   bloodSnapshot,
   clearBlood,
@@ -12,8 +14,10 @@ import {
 
 /**
  * Camada global de sangue.
- *   bloodRef.current.burst({ x, y, count, velocityY, moveSpeed, mode })
+ *   bloodRef.current.burst({ x, y, count, mode, power, ... })
  *   bloodRef.current.drip({ x, y })
+ *   bloodRef.current.arterial({ x, y })
+ *   bloodRef.current.stump({ x, y })
  *   bloodRef.current.clear()
  */
 const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
@@ -36,6 +40,16 @@ const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
       const sys = systemRef.current;
       setBloodFloor(sys, window.innerHeight - 8);
       bloodDrip(sys, opts.x, opts.y, opts);
+    },
+    arterial(opts) {
+      const sys = systemRef.current;
+      setBloodFloor(sys, window.innerHeight - 8);
+      bloodArterial(sys, opts.x, opts.y, opts);
+    },
+    stump(opts) {
+      const sys = systemRef.current;
+      setBloodFloor(sys, window.innerHeight - 8);
+      bloodStump(sys, opts.x, opts.y, opts);
     },
     clear() {
       clearBlood(systemRef.current);
@@ -81,7 +95,7 @@ const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
       {particles.map((p) => (
         <span
           key={p.id}
-          className={`${styles.drop} ${p.settled ? styles.settled : ""}`}
+          className={`${styles.drop} ${p.settled ? styles.settled : ""} ${p.pool ? styles.pool : ""}`}
           style={{
             left: p.x,
             top: p.y,
@@ -97,3 +111,4 @@ const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
 });
 
 export default BloodLayer;
+

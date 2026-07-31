@@ -351,26 +351,92 @@ function Player({
     }
   }, [deathType, shotTick]);
 
-  // pingos só via partículas globais
+  // ---- sangramento realista contínuo ----
+  // venous: feridas comuns | arterial: vitais (pulso) | stump: cotos
   useEffect(() => {
-    if (deathType !== "none" || wounds.length === 0) return;
+    if (deathType !== "none") return;
 
-    const id = setInterval(() => {
+    const hasWounds = wounds.length > 0;
+    const L = limbsRef.current;
+    const hasStump =
+      L.legLeft.severed ||
+      L.legRight.severed ||
+      L.armLeft.severed ||
+      L.armRight.severed;
+    if (!hasWounds && !hasStump) return;
+
+    const STUMP_POS = {
+      legLeft: { left: 30, top: 72 },
+      legRight: { left: 66, top: 72 },
+      armLeft: { left: 14, top: 36 },
+      armRight: { left: 82, top: 36 },
+    };
+
+    const isArterialPart = (part) =>
+      part === "heart" || part === "forehead" || part === "groin";
+
+    // venous — gotejamento constante das feridas
+    const venousId = setInterval(() => {
       const list = woundsRef.current;
+      if (!list.length) return;
+      // mais feridas → mais pingos por tick
+      const n = Math.min(3, 1 + Math.floor(list.length / 3));
+      for (let i = 0; i < n; i++) {
+        const w = list[Math.floor(Math.random() * list.length)];
+        if (!w) continue;
+        const worldX = playerX + (w.left / 100) * 48;
+        const worldY = drawYRef.current + (w.top / 100) * 64;
+        const power = isArterialPart(w.part) ? 1.0 : 0.7;
+        bloodRef?.current?.drip({
+          x: worldX,
+          y: worldY,
+          velocityY: velocityRef.current,
+          moveSpeed: moveSpeedRef.current,
+          power,
+        });
+      }
+    }, 220);
+
+    // arterial — pulso ~1.2Hz nos vitais
+    const arterialId = setInterval(() => {
+      const list = woundsRef.current.filter((w) => isArterialPart(w.part));
+      if (!list.length) return;
       const w = list[Math.floor(Math.random() * list.length)];
-      if (!w) return;
       const worldX = playerX + (w.left / 100) * 48;
       const worldY = drawYRef.current + (w.top / 100) * 64;
-      bloodRef?.current?.drip({
+      const power = w.part === "heart" ? 1.35 : w.part === "forehead" ? 1.15 : 1.0;
+      bloodRef?.current?.arterial({
         x: worldX,
         y: worldY,
         velocityY: velocityRef.current,
         moveSpeed: moveSpeedRef.current,
+        power,
       });
-    }, 260);
+    }, 480);
 
-    return () => clearInterval(id);
-  }, [wounds.length, deathType, playerX, bloodRef]);
+    // stump — volume alto dos cotos
+    const stumpId = setInterval(() => {
+      const severed = LIMB_ORDER.filter((id) => limbsRef.current[id].severed);
+      if (!severed.length) return;
+      const id = severed[Math.floor(Math.random() * severed.length)];
+      const pos = STUMP_POS[id];
+      const worldX = playerX + (pos.left / 100) * 48;
+      const worldY = drawYRef.current + (pos.top / 100) * 64;
+      bloodRef?.current?.stump({
+        x: worldX,
+        y: worldY,
+        velocityY: velocityRef.current,
+        moveSpeed: moveSpeedRef.current,
+        power: 1.15,
+      });
+    }, 340);
+
+    return () => {
+      clearInterval(venousId);
+      clearInterval(arterialId);
+      clearInterval(stumpId);
+    };
+  }, [wounds.length, limbs, deathType, playerX, bloodRef]);
 
   const tilt = Math.max(-18, Math.min(18, velocityY * 1.2));
   const isDying = deathType !== "none";
@@ -486,3 +552,4 @@ function Player({
 }
 
 export default Player;
+

@@ -1,17 +1,18 @@
 /**
- * Sistema de partículas de sangue (estilo Happy Wheels).
- * Física simples: gravidade, damping, colisão com chão.
+ * Sistema de partículas de sangue — sangramento realista.
+ * Modos: shot | death | drip | arterial | venous | stump
  */
 
-const GRAVITY = 0.38;
-const DAMPING = 0.992;
-const FLOOR_FRICTION = 0.72;
-const MAX_PARTICLES = 220;
+const GRAVITY = 0.42;
+const DAMPING = 0.991;
+const FLOOR_FRICTION = 0.68;
+const MAX_PARTICLES = 320;
 
 let nextId = 1;
 
 function createParticle(x, y, vx, vy, opts = {}) {
   const size = opts.size ?? 2 + Math.random() * 4;
+  const life = opts.life ?? 0.7 + Math.random() * 0.9;
   return {
     id: nextId++,
     x,
@@ -19,13 +20,14 @@ function createParticle(x, y, vx, vy, opts = {}) {
     vx,
     vy,
     size,
-    width: opts.streak ? size * (0.4 + Math.random() * 0.4) : size,
-    height: opts.streak ? size * (2.5 + Math.random() * 3.5) : size,
-    life: opts.life ?? 0.7 + Math.random() * 0.9,
-    maxLife: opts.life ?? 0.7 + Math.random() * 0.9,
+    width: opts.streak ? size * (0.35 + Math.random() * 0.45) : size,
+    height: opts.streak ? size * (2.2 + Math.random() * 4) : size * (0.7 + Math.random() * 0.5),
+    life,
+    maxLife: life,
     rot: opts.rot ?? (Math.atan2(vy, vx) * 180) / Math.PI + 90,
     streak: !!opts.streak,
     settled: false,
+    pool: !!opts.pool, // mancha no chão mais durável
   };
 }
 
@@ -36,6 +38,16 @@ export function createBloodSystem() {
   };
 }
 
+/**
+ * Emissão genérica de sangue
+ * mode:
+ *  - shot: impacto de tiro
+ *  - death: explosão grande
+ *  - drip: gota leve
+ *  - venous: sangramento contínuo lento
+ *  - arterial: jato pulsátil (pra cima / fora)
+ *  - stump: coto seccionado (volume alto)
+ */
 export function bloodBurst(system, x, y, opts = {}) {
   if (!system) return;
 
@@ -51,56 +63,126 @@ export function bloodBurst(system, x, y, opts = {}) {
   const vxBias = -Math.min(1.2, Math.max(0, moveSpeed) / 9);
 
   let n = count;
-  if (mode === "death") n = Math.floor(count * 1.6);
-  if (mode === "drip") n = Math.max(2, Math.floor(count * 0.25));
+  if (mode === "death") n = Math.floor(count * 1.7);
+  if (mode === "drip") n = Math.max(1, Math.floor(count * 0.3));
+  if (mode === "venous") n = Math.max(2, Math.floor(count * 0.4));
+  if (mode === "arterial") n = Math.max(4, Math.floor(count * 0.7));
+  if (mode === "stump") n = Math.max(5, Math.floor(count * 0.85));
 
   for (let i = 0; i < n; i++) {
-    let angle = Math.random() * Math.PI * 2;
+    let angle;
+    let speedBase;
+    let streak = false;
+    let size;
+    let life;
 
-    if (mode === "death") {
-      angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.5;
-    } else if (mode === "drip") {
-      angle = Math.PI / 2 + (Math.random() - 0.5) * 0.6;
+    switch (mode) {
+      case "death":
+        angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.55;
+        speedBase = 7 + Math.random() * 15;
+        streak = Math.random() > 0.25;
+        size = 2.5 + Math.random() * 5.5;
+        life = 1.2 + Math.random() * 1.3;
+        break;
+
+      case "drip":
+      case "venous":
+        // cai pra baixo, leve espalhamento
+        angle = Math.PI / 2 + (Math.random() - 0.5) * (mode === "venous" ? 0.85 : 0.5);
+        speedBase = mode === "venous" ? 1.2 + Math.random() * 2.8 : 0.8 + Math.random() * 2.2;
+        streak = Math.random() > 0.7;
+        size = 1.4 + Math.random() * 2.8;
+        life = 0.6 + Math.random() * 0.7;
+        break;
+
+      case "arterial":
+        // jato pra fora/cima — pulso
+        angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
+        // um pouco pro lado do movimento (trás)
+        angle += vxBias * 0.35;
+        speedBase = 8 + Math.random() * 12;
+        streak = Math.random() > 0.2;
+        size = 2 + Math.random() * 4;
+        life = 0.75 + Math.random() * 0.85;
+        break;
+
+      case "stump":
+        // volume do coto — leque largo pra baixo/lados
+        angle = Math.PI / 2 + (Math.random() - 0.5) * 1.6;
+        speedBase = 3 + Math.random() * 7;
+        streak = Math.random() > 0.4;
+        size = 2.2 + Math.random() * 4.5;
+        life = 0.9 + Math.random() * 1.0;
+        break;
+
+      default: // shot
+        angle = Math.random() * Math.PI * 2;
+        speedBase = 4 + Math.random() * 10;
+        streak = Math.random() > 0.3;
+        size = 1.8 + Math.random() * 3.5;
+        life = 0.55 + Math.random() * 0.75;
+        break;
     }
-
-    const speedBase =
-      mode === "death"
-        ? 6 + Math.random() * 14
-        : mode === "drip"
-          ? 1 + Math.random() * 3
-          : 4 + Math.random() * 10;
 
     const speed =
       speedBase *
       power *
-      (1 + Math.min(0.9, Math.abs(velocityY) / 20) + Math.min(0.6, moveSpeed / 14));
+      (1 + Math.min(0.9, Math.abs(velocityY) / 20) + Math.min(0.55, moveSpeed / 14));
 
-    let vx = Math.cos(angle) * speed + vxBias * 5;
-    let vy = Math.sin(angle) * speed + vyBias * 3;
+    let vx = Math.cos(angle) * speed + vxBias * (mode === "arterial" ? 3 : 5);
+    let vy = Math.sin(angle) * speed + vyBias * 2.5;
 
-    if (vx > 3) vx *= 0.3;
+    // arterial: empurra um pouco mais pra cima
+    if (mode === "arterial") {
+      vy -= 2 + Math.random() * 4;
+    }
 
-    const streak = mode !== "drip" && Math.random() > 0.3;
+    if (vx > 3.5) vx *= 0.3;
 
     system.particles.push(
       createParticle(x, y, vx, vy, {
         streak,
-        size: mode === "death" ? 2.5 + Math.random() * 5 : 1.8 + Math.random() * 3.5,
-        life: mode === "death" ? 1.1 + Math.random() * 1.2 : 0.55 + Math.random() * 0.7,
+        size,
+        life,
       })
     );
   }
 
   if (system.particles.length > MAX_PARTICLES) {
+    // remove as mais antigas que já settled primeiro
+    system.particles.sort((a, b) => {
+      if (a.settled !== b.settled) return a.settled ? -1 : 1;
+      return a.life - b.life;
+    });
     system.particles.splice(0, system.particles.length - MAX_PARTICLES);
   }
 }
 
 export function bloodDrip(system, x, y, opts = {}) {
   bloodBurst(system, x, y, {
-    count: 3 + Math.floor(Math.random() * 3),
-    mode: "drip",
-    power: 0.7,
+    count: 2 + Math.floor(Math.random() * 3),
+    mode: "venous",
+    power: 0.75,
+    ...opts,
+  });
+}
+
+/** Jato arterial (chamar em pulsos ~400-700ms) */
+export function bloodArterial(system, x, y, opts = {}) {
+  bloodBurst(system, x, y, {
+    count: 6 + Math.floor(Math.random() * 6),
+    mode: "arterial",
+    power: 1.1,
+    ...opts,
+  });
+}
+
+/** Sangue de coto seccionado */
+export function bloodStump(system, x, y, opts = {}) {
+  bloodBurst(system, x, y, {
+    count: 8 + Math.floor(Math.random() * 8),
+    mode: "stump",
+    power: 1.2,
     ...opts,
   });
 }
@@ -126,30 +208,35 @@ export function stepBlood(system, dtNorm = 1) {
       p.x += p.vx * dtNorm;
       p.y += p.vy * dtNorm;
 
-      if (p.streak && Math.abs(p.vx) + Math.abs(p.vy) > 0.4) {
+      if (p.streak && Math.abs(p.vx) + Math.abs(p.vy) > 0.35) {
         p.rot = (Math.atan2(p.vy, p.vx) * 180) / Math.PI + 90;
       }
 
       if (p.y + p.height * 0.5 > floorY) {
         p.y = floorY - p.height * 0.5;
-        p.vy *= -0.25;
+        p.vy *= -0.22;
         p.vx *= FLOOR_FRICTION;
-        if (Math.abs(p.vy) < 0.8 && Math.abs(p.vx) < 0.6) {
+        if (Math.abs(p.vy) < 0.7 && Math.abs(p.vx) < 0.55) {
           p.settled = true;
           p.vx = 0;
           p.vy = 0;
-          p.height = Math.max(2, p.height * 0.35);
-          p.width = p.width * 1.6;
+          p.height = Math.max(1.5, p.height * 0.3);
+          p.width = p.width * (1.4 + Math.random() * 0.8);
           p.streak = false;
+          p.pool = true;
+          // manchas duram bem mais
+          p.life = Math.max(p.life, 2.5 + Math.random() * 3);
+          p.maxLife = p.life;
         }
       }
 
       if (p.y < 4) {
         p.y = 4;
-        p.vy *= -0.3;
+        p.vy *= -0.28;
       }
     } else {
-      p.life -= dtNorm * 0.01;
+      // poça some bem devagar
+      p.life -= dtNorm * (p.pool ? 0.004 : 0.01);
     }
 
     if (p.life > 0) alive.push(p);
@@ -169,6 +256,7 @@ export function bloodSnapshot(system) {
     rot: p.rot,
     opacity: Math.max(0, Math.min(1, p.life / Math.max(0.01, p.maxLife))),
     settled: p.settled,
+    pool: p.pool,
   }));
 }
 
@@ -179,3 +267,4 @@ export function clearBlood(system) {
 export function setBloodFloor(system, floorY) {
   if (system) system.floorY = floorY;
 }
+
