@@ -335,17 +335,17 @@ function App() {
 
     if (hitTop || hitBottom) {
       isDeadRef.current = true;
-      // regras:
-      // - spike de BAIXO (qualquer contato / cair em cima) → impale
-      // - spike de CIMA na PONTA → hang pela cabeça, depois cai
-      // - spike de CIMA na BASE → impale
+      // regras (região tip/base da colisão):
+      // - CIMA + ponta  → hang (pendura, solta, cai → chão kick ou impale embaixo)
+      // - CIMA + base   → loose (corpo isolado kickando)
+      // - BAIXO + ponta → impale
+      // - BAIXO + base  → loose
       const hit = hitBottom || hitTop;
-      let type = "spike_side";
-      if (hitBottom) {
-        type = "spike_impale";
-      } else if (hitTop) {
-        type = hitTop.region === "tip" ? "spike_hang" : "spike_impale";
-      }
+      let type = "spike_loose";
+      if (hitTop && hitTop.region === "tip") type = "spike_hang";
+      else if (hitBottom && hitBottom.region === "tip") type = "spike_impale";
+      else type = "spike_loose"; // base (cima ou baixo)
+
       const tip = hit.tip || { x: player.x + player.width / 2, y: player.y };
       setDeathSpike({
         tipX: tip.x,

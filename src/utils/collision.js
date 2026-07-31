@@ -106,15 +106,14 @@ function contactRegion(player, hb) {
   if (!hb?.tip) return "tip";
   const tip = hb.tip;
   const cx = player.x + player.width * 0.5;
-  // para top: usa topo da cabeça; para bottom: usa centro/pés
+  // top: cabeça; bottom: centro-baixo (cai na ponta)
   const cy =
     hb.side === "top"
-      ? player.y + player.height * 0.15
-      : player.y + player.height * 0.55;
+      ? player.y + player.height * 0.2
+      : player.y + player.height * 0.65;
 
   const distTip = Math.hypot(cx - tip.x, cy - tip.y);
 
-  // base = média dos dois vértices que não são a ponta
   const basePts = hb.points.filter(
     (p) => Math.hypot(p.x - tip.x, p.y - tip.y) > 2
   );
@@ -126,9 +125,15 @@ function contactRegion(player, hb) {
   }
   const distBase = Math.hypot(cx - bx, cy - by);
 
-  // threshold: se bem perto da ponta → tip
-  if (distTip < 36) return "tip";
-  if (distTip < distBase * 0.85) return "tip";
+  // ponta = terço superior do triângulo (perto do tip)
+  // para bottom: se o centro do player está acima da metade do spike → tip
+  if (hb.side === "bottom") {
+    const midY = (tip.y + by) / 2;
+    if (cy <= midY + 8 || distTip < distBase) return "tip";
+    return "base";
+  }
+  // top: se a cabeça está perto da ponta (embaixo do spike) → tip
+  if (distTip < 42 || distTip < distBase * 0.9) return "tip";
   return "base";
 }
 
