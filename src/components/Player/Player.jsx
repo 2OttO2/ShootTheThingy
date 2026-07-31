@@ -381,7 +381,7 @@ function Player({
       lastRafTime.current = time;
       const dtNorm = dt / 16.67;
 
-      stepRagdoll(ragdollRef.current, dtNorm);
+      stepRagdoll(ragdollRef.current, dtNorm, moveSpeedRef.current);
       setRagdollPose(ragdollSnapshot(ragdollRef.current));
       ragdollRaf.current = requestAnimationFrame(loop);
     };
@@ -430,10 +430,12 @@ function Player({
       let list = detachedRef.current;
       if (list.length) {
         const next = [];
+        const scroll = Math.max(0, moveSpeedRef.current) * dtN * 1.15;
         for (const piece of list) {
           piece.vy += 0.35 * dtN;
           piece.vx *= 0.995;
-          piece.x += piece.vx * dtN;
+          // física + scroll do cenário (some pra esquerda)
+          piece.x += piece.vx * dtN - scroll;
           piece.y += piece.vy * dtN;
           piece.rot += piece.vr * dtN;
           piece.life -= dtN * 0.016;
@@ -446,7 +448,9 @@ function Player({
             if (Math.abs(piece.vy) < 0.5) piece.vy = 0;
           }
 
-          if (piece.life > 0) next.push(piece);
+          // fora da tela → desaparece
+          if (piece.x < -80 || piece.life <= 0) continue;
+          next.push(piece);
         }
         detachedRef.current = next;
         setDetachedLimbs(next);

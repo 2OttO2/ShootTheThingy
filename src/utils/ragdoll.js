@@ -203,7 +203,7 @@ export function createRagdoll(x, y, opts = {}) {
     deathType,
     spikeSide,
     severed: sev,
-    hangTimer: deathType === "spike_hang" ? 1.4 : 0,
+    hangTimer: deathType === "spike_hang" ? 0.85 : 0,
     hangReleased: false,
     spikeTipX: tipX,
     spikeTipY: tipY,
@@ -265,67 +265,153 @@ function collideWorld(p, floorY, ceilingY) {
   }
 }
 
-export function stepRagdoll(ragdoll, dtNorm = 1) {
+/**
+ * @param scrollSpeed - velocidade do cenário (empurra tudo pra esquerda)
+ */
+export function stepRagdoll(ragdoll, dtNorm = 1, scrollSpeed = 0) {
   if (!ragdoll || !ragdoll.alive) return;
 
   const { points, sticks, floorY, ceilingY } = ragdoll;
   const g = GRAVITY * dtNorm * dtNorm;
   const damp = Math.pow(DAMPING, dtNorm);
   const dtSec = dtNorm * (16.67 / 1000);
+  // scroll do mundo (mesmo eixo dos spikes)
+  const scroll = Math.max(0, scrollSpeed) * dtNorm * 1.15;
 
-  // hang pela CABEÇA
-  if (ragdoll.deathType === "spike_hang" && !ragdoll.hangReleased) {
-    ragdoll.hangTimer -= dtSec;
-    const h = ragdoll.parts.head;
-    h.x = ragdoll.spikeTipX;
-    h.y = ragdoll.spikeTipY;
-    h.ox = h.x;
-    h.oy = h.y;
-    h.pinned = true;
+  // ponta do spike se move com o cenário
+  if (scroll > 0) {
+    ragdoll.spikeTipX -= scroll;
+  }
 
-    if (ragdoll.hangTimer <= 0) {
-      ragdoll.hangReleased = true;
-      h.pinned = false;
-      // solta e cai
-      h.oy = h.y - 1.5;
-      ragdoll.parts.chest.oy = ragdoll.parts.chest.y - 2;
-      ragdoll.parts.hip.oy = ragdoll.parts.hip.y - 3;
+  // --- hang pela cabeça: sempre solta e cai ---
+  if (ragdoll.deathType === "spike_hang") {
+    if (!ragdoll.hangReleased) {
+      ragdoll.hangTimer -= dtSec;
+      const h = ragdoll.parts.head;
+      h.x = ragdoll.spikeTipX;
+      h.y = ragdoll.spikeTipY;
+      h.ox = h.x;
+      h.oy = h.y;
+      h.pinned = true;
+
+      // solta cedo o bastante pra sempre cair
+      if (ragdoll.hangTimer <= 0) {
+        ragdoll.hangReleased = true;
+        h.pinned = false;
+        // queda garantida
+        h.oy = h.y - 2;
+        ragdoll.parts.chest.oy = ragdoll.parts.chest.y - 3;
+        ragdoll.parts.hip.oy = ragdoll.parts.hip.y - 4;
+        // kick leve nas pernas ao soltar
+        const { severed } = ragdoll;
+        if (!severed.legLeft && ragdoll.parts.lFoot) {
+          ragdoll.parts.lFoot.ox = ragdoll.parts.lFoot.x + 6;
+        }
+        if (!severed.legRight && ragdoll.parts.rFoot) {
+          ragdoll.parts.rFoot.ox = ragdoll.parts.rFoot.x - 6;
+        }
+      }
+    } else if (!ragdoll.floorKicked) {
+      // depois de soltar: se cair na zona do spike de baixo → impale
+      const chest = ragdoll.parts.chest;
+      const bottomTipY = floorY - 56;
+      if (chest.y >= bottomTipY - 8 && chest.y <= bottomTipY + 40) {
+        ragdoll.deathType = "spike_impale";
+        ragdoll.spikeSide = "bottom";
+        ragdoll.spikeTipY = bottomTipY;
+        ragdoll.spikeTipX = chest.x;
+        chest.pinned = true;
+        chest.x = ragdoll.spikeTipX;
+        chest.y = ragdoll.spikeTipY + 10;
+        chest.ox = chest.x;
+        chest.oy = chest.y;
+      }
     }
   }
 
-  // impale
+  // --- impale: preso mas desliza + scroll ---
   if (ragdoll.deathType === "spike_impale" || ragdoll.deathType === "spike_top") {
     const c = ragdoll.parts.chest;
     c.x = ragdoll.spikeTipX;
     if (ragdoll.spikeSide === "bottom") {
-      c.y = Math.min(c.y + 0.12 * dtNorm, ragdoll.spikeTipY + 36);
+      c.y = Math.min(c.y + 0.15 * dtNorm, ragdoll.spikeTipY + 40);
     } else {
-      // preso mais pra cima no spike do teto
-      c.y = Math.max(c.y, 16);
+      // nunca fica preso no teto pra sempre: depois de um tempo despina e cai
+      if (!ragdoll.impaleTimer) ragdoll.impaleTimer = 1.1;
+      ragdoll.impaleTimer -= dtSec;
+      if (ragdoll.impaleTimer <= 0) {
+        c.pinned = false;
+        // vira queda livre / possível impale embaixo
+        ragdoll.deathType = "spike_hang";
+        ragdoll.hangReleased = true;
+        ragdoll.hangTimer = 0;
+      } else {
+        c.y = Math.max(c.y, 14);
+        c.pinned = true;
+      }
     }
-    c.ox = c.x;
-    c.oy = c.y;
-    c.pinned = true;
-
+    if (c.pinned) {
+      c.ox = c.x;
+      c.oy = c.y;
+    }
     const hip = ragdoll.parts.hip;
     hip.x = ragdoll.spikeTipX + (hip.x - ragdoll.spikeTipX) * 0.25;
   }
 
+  // verlet
   for (const p of points) {
-    if (p.pinned) continue;
+    if (p.pinned) {
+      // pinned também acompanha scroll (já refletido no tipX)
+      continue;
+    }
     const vx = (p.x - p.ox) * damp;
     const vy = (p.y - p.oy) * damp;
     p.ox = p.x;
     p.oy = p.y;
-    p.x += vx;
+    p.x += vx - scroll;
     p.y += vy + g;
   }
+
+  // pinned points still need scroll on their x if tip moved — already set from tip
 
   for (let i = 0; i < ITERATIONS; i++) {
     for (const s of sticks) constrain(s);
     for (const p of points) {
       if (!p.pinned) collideWorld(p, floorY, ceilingY);
     }
+  }
+
+  // chão: chute final (uma vez)
+  if (!ragdoll.floorKicked) {
+    const hip = ragdoll.parts.hip;
+    if (hip.y >= floorY - 6) {
+      ragdoll.floorKicked = true;
+      // solta qualquer pin
+      for (const p of points) p.pinned = false;
+      const { severed } = ragdoll;
+      if (!severed.legLeft && ragdoll.parts.lFoot) {
+        ragdoll.parts.lFoot.ox = ragdoll.parts.lFoot.x + 12;
+        ragdoll.parts.lFoot.oy = ragdoll.parts.lFoot.y + 4;
+      }
+      if (!severed.legRight && ragdoll.parts.rFoot) {
+        ragdoll.parts.rFoot.ox = ragdoll.parts.rFoot.x - 14;
+        ragdoll.parts.rFoot.oy = ragdoll.parts.rFoot.y + 5;
+      }
+      if (!severed.armLeft && ragdoll.parts.lHand) {
+        ragdoll.parts.lHand.ox = ragdoll.parts.lHand.x + 5;
+      }
+      if (!severed.armRight && ragdoll.parts.rHand) {
+        ragdoll.parts.rHand.ox = ragdoll.parts.rHand.x - 5;
+      }
+      // tronco quica leve
+      hip.oy = hip.y + 2;
+      ragdoll.parts.chest.oy = ragdoll.parts.chest.y + 1;
+    }
+  }
+
+  // remove se saiu muito da tela (cenário passou)
+  if (ragdoll.parts.chest.x < -120) {
+    ragdoll.alive = false;
   }
 }
 
