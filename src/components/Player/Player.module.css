@@ -349,12 +349,13 @@
 
 .rdHead {
   position: absolute;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   background: #f5d0a9;
   border: 2px solid #333;
   border-radius: 50%;
-  z-index: 3;
+  z-index: 4;
+  box-sizing: border-box;
 }
 
 .rdEye {
@@ -376,8 +377,9 @@
   position: absolute;
   background: #6c5ce7;
   border: 2px solid #333;
-  border-radius: 6px;
+  border-radius: 8px;
   z-index: 2;
+  box-sizing: border-box;
 }
 
 .rdNeck {
@@ -392,36 +394,29 @@
   position: absolute;
   background: #f5d0a9;
   border: 2px solid #333;
-  border-radius: 4px;
+  border-radius: 5px;
   z-index: 1;
+  box-sizing: border-box;
 }
 
 .rdLeg {
   position: absolute;
   background: #2d3436;
   border: 2px solid #333;
-  border-radius: 3px;
+  border-radius: 4px;
   z-index: 1;
-}
-
-.rdJoint {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  background: #f5d0a9;
-  border: 1px solid #333;
-  border-radius: 50%;
-  z-index: 2;
+  box-sizing: border-box;
 }
 
 .rdFoot {
   position: absolute;
-  width: 12px;
-  height: 7px;
+  width: 14px;
+  height: 8px;
   background: #2d3436;
   border: 2px solid #333;
   border-radius: 3px;
-  z-index: 2;
+  z-index: 3;
+  box-sizing: border-box;
 }
 
 /* ===== cotos (membro seccionado) ===== */
@@ -514,5 +509,36 @@
   height: 5px;
   background: #8b0000;
   border-radius: 2px;
+}
+
+
+/* ===== RAGDOLL visual polish ===== */
+.rdShoulder {
+  position: absolute;
+  background: #f5d0a9;
+  border: 2px solid #333;
+  border-radius: 4px;
+  z-index: 2;
+}
+
+.rdMouth {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  height: 4px;
+  border-radius: 0 0 6px 6px;
+  background: #333;
+  opacity: 0.85;
+}
+
+.rdHand {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #f5d0a9;
+  border: 2px solid #333;
+  border-radius: 50%;
+  z-index: 3;
 }
 

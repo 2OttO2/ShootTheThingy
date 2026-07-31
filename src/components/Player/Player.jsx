@@ -124,14 +124,14 @@ function makeSprayBurst({ count, originLeft, originTop, velocityY, moveSpeed, de
 
 function Limb({ a, b, className, thickness = 8 }) {
   if (!a || !b) return null;
-  const length = dist(a, b);
+  const length = Math.max(3, dist(a, b));
   const angle = angleBetween(a, b);
   return (
     <div
       className={className}
       style={{
         left: a.x,
-        top: a.y,
+        top: a.y - thickness / 2,
         width: length,
         height: thickness,
         transform: `rotate(${angle}deg)`,
@@ -616,48 +616,50 @@ function Player({
     return (
       <>
         <div className={styles.ragdollLayer}>
-          <Limb a={p.chest} b={p.hip} className={styles.rdTorso} thickness={14} />
-          <Limb a={p.head} b={p.chest} className={styles.rdNeck} thickness={6} />
-          <Limb a={p.chest} b={p.lShoulder} className={styles.rdArm} thickness={6} />
-          <Limb a={p.chest} b={p.rShoulder} className={styles.rdArm} thickness={6} />
+          {/* torso primeiro (atrás) */}
+          <Limb a={p.chest} b={p.hip} className={styles.rdTorso} thickness={16} />
+          <Limb a={p.head} b={p.chest} className={styles.rdNeck} thickness={5} />
+          <Limb a={p.chest} b={p.lShoulder} className={styles.rdShoulder} thickness={7} />
+          <Limb a={p.chest} b={p.rShoulder} className={styles.rdShoulder} thickness={7} />
           {!p.severed?.armLeft && (
-            <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={7} />
+            <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={6} />
           )}
           {!p.severed?.armRight && (
-            <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={7} />
+            <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={6} />
           )}
           {!p.severed?.legLeft && (
             <>
-              <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={8} />
-              <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={7} />
+              <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={9} />
+              <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={8} />
             </>
           )}
           {!p.severed?.legRight && (
             <>
-              <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={8} />
-              <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={7} />
+              <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={9} />
+              <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={8} />
             </>
           )}
 
           <div
             className={styles.rdHead}
-            style={{ left: p.head.x - 14, top: p.head.y - 14 }}
+            style={{ left: p.head.x - 16, top: p.head.y - 16 }}
           >
             <div className={styles.rdEye} />
             <div className={`${styles.rdEye} ${styles.rdEyeRight}`} />
+            <div className={styles.rdMouth} />
           </div>
 
           {!p.severed?.armLeft && (
-            <div className={styles.rdJoint} style={{ left: p.lHand.x - 4, top: p.lHand.y - 4 }} />
+            <div className={styles.rdHand} style={{ left: p.lHand.x - 5, top: p.lHand.y - 5 }} />
           )}
           {!p.severed?.armRight && (
-            <div className={styles.rdJoint} style={{ left: p.rHand.x - 4, top: p.rHand.y - 4 }} />
+            <div className={styles.rdHand} style={{ left: p.rHand.x - 5, top: p.rHand.y - 5 }} />
           )}
           {!p.severed?.legLeft && (
-            <div className={styles.rdFoot} style={{ left: p.lFoot.x - 5, top: p.lFoot.y - 3 }} />
+            <div className={styles.rdFoot} style={{ left: p.lFoot.x - 6, top: p.lFoot.y - 4 }} />
           )}
           {!p.severed?.legRight && (
-            <div className={styles.rdFoot} style={{ left: p.rFoot.x - 5, top: p.rFoot.y - 3 }} />
+            <div className={styles.rdFoot} style={{ left: p.rFoot.x - 6, top: p.rFoot.y - 4 }} />
           )}
         </div>
 
