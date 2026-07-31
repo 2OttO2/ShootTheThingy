@@ -14,7 +14,7 @@ import BloodLayer from "./components/Blood/BloodLayer.jsx";
 
 import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
-import { isPlayerCollidingWithSpike } from "./utils/collision.js";
+import { findSpikeCollision } from "./utils/collision.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
 
 import {
@@ -316,34 +316,36 @@ function App() {
       }
     }
 
-    // colisão — separa top/bottom pra escolher animação de morte
+    // colisão — hitbox alinhada ao sprite do player (48×64 em x=300)
     const player = {
-      x: 300,
-      y: playerY.current + 8,
-      width: 25,
-      height: 25,
+      x: 300 + 6,           // margem interna (não usa a borda vazia)
+      y: playerY.current + 4,
+      width: 36,
+      height: 56,
     };
 
     const topBoxes = createSpikeHitboxes(spikesRef.current.top, "top");
     const bottomBoxes = createSpikeHitboxes(spikesRef.current.bottom, "bottom");
 
-    const hitTop = topBoxes.some((hitbox) =>
-      isPlayerCollidingWithSpike(player, hitbox)
-    );
-    const hitBottom = bottomBoxes.some((hitbox) =>
-      isPlayerCollidingWithSpike(player, hitbox)
-    );
+    const hitTop = findSpikeCollision(player, topBoxes);
+    const hitBottom = findSpikeCollision(player, bottomBoxes);
 
     if (hitTop || hitBottom) {
       isDeadRef.current = true;
-      // em cima do spike de baixo / espetado por baixo → spike_top
-      // bateu no de cima (mais de lado/teto) → spike_side
-      const type =
-        hitBottom && speed.current >= 0
-          ? "spike_top"
-          : hitTop
-            ? "spike_side"
-            : "spike_top";
+      // classifica morte pelo contato (refinado depois nas animações)
+      let type = "spike_side";
+      if (hitBottom) {
+        const tipY = hitBottom.tip ? hitBottom.tip.y : window.innerHeight - 64;
+        const playerMid = player.y + player.height * 0.5;
+        // perto da ponta → hang; mais enfiado no spike → impale
+        if (playerMid <= tipY + 30) {
+          type = "spike_hang";
+        } else {
+          type = "spike_impale";
+        }
+      } else if (hitTop) {
+        type = "spike_side";
+      }
       setDeathType(type);
       setGameState(GAME_STATE.DYING);
 
@@ -559,3 +561,4 @@ function App() {
 }
 
 export default App;
+

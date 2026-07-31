@@ -156,6 +156,8 @@ function Player({
   const [ragdollPose, setRagdollPose] = useState(null);
   const [limbs, setLimbs] = useState(emptyLimbState);
   const [vitalIndex, setVitalIndex] = useState(0);
+  const [recoil, setRecoil] = useState({ rot: 0, kick: 0 }); // reação ao tiro
+  const recoilRef = useRef({ rot: 0, kick: 0 });
 
   const lastTick = useRef(0);
   const velocityRef = useRef(velocityY);
@@ -278,6 +280,13 @@ function Player({
     if (deathType !== "none") return;
     lastTick.current = shotTick;
     applyShot();
+    // kickback do corpo (pra cima/trás), não balanço L-R
+    const kick = {
+      rot: -8 - Math.random() * 6, // inclina pra trás
+      kick: 6 + Math.random() * 4,  // sobe um pouco
+    };
+    recoilRef.current = kick;
+    setRecoil(kick);
   }, [shotTick, deathType, playerX]);
 
   useEffect(() => {
@@ -294,12 +303,25 @@ function Player({
     const floorY = window.innerHeight - 8;
     const ceilingY = 5;
 
+    const L = limbsRef.current;
+    const tipY =
+      deathType === "spike_side"
+        ? drawYRef.current + 20
+        : window.innerHeight - 64;
     const rd = createRagdoll(playerX, drawYRef.current, {
       deathType,
       velocityY: velocityRef.current,
       moveSpeed: moveSpeedRef.current,
       floorY,
       ceilingY,
+      severed: {
+        legLeft: L.legLeft.severed,
+        legRight: L.legRight.severed,
+        armLeft: L.armLeft.severed,
+        armRight: L.armRight.severed,
+      },
+      spikeTipX: playerX + 24,
+      spikeTipY: tipY,
     });
     ragdollRef.current = rd;
     setRagdollPose(ragdollSnapshot(rd));
@@ -348,6 +370,8 @@ function Player({
       lastTick.current = 0;
       limbsRef.current = empty;
       vitalRef.current = 0;
+      recoilRef.current = { rot: 0, kick: 0 };
+      setRecoil({ rot: 0, kick: 0 });
     }
   }, [deathType, shotTick]);
 
@@ -452,7 +476,33 @@ function Player({
     };
   }, [wounds.length, limbs, deathType, playerX, bloodRef]);
 
-  const tilt = Math.max(-18, Math.min(18, velocityY * 1.2));
+  // tilt suave só pela velocidade vertical + recoil do tiro
+  useEffect(() => {
+    if (deathType !== "none") return;
+    let raf = null;
+    const tick = () => {
+      const r = recoilRef.current;
+      if (Math.abs(r.rot) > 0.15 || Math.abs(r.kick) > 0.15) {
+        r.rot *= 0.82;
+        r.kick *= 0.8;
+        setRecoil({ rot: r.rot, kick: r.kick });
+        raf = requestAnimationFrame(tick);
+      } else if (r.rot !== 0 || r.kick !== 0) {
+        r.rot = 0;
+        r.kick = 0;
+        setRecoil({ rot: 0, kick: 0 });
+      }
+    };
+    if (Math.abs(recoilRef.current.rot) > 0.15) {
+      raf = requestAnimationFrame(tick);
+    }
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [recoil.rot, deathType]);
+
+  const velTilt = Math.max(-6, Math.min(6, velocityY * 0.35));
+  const tilt = velTilt + recoil.rot;
   const isDying = deathType !== "none";
 
   if (isDying && ragdollPose) {
@@ -462,14 +512,26 @@ function Player({
         <div className={styles.ragdollLayer}>
           <Limb a={p.chest} b={p.hip} className={styles.rdTorso} thickness={14} />
           <Limb a={p.head} b={p.chest} className={styles.rdNeck} thickness={6} />
-          <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={7} />
-          <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={7} />
           <Limb a={p.chest} b={p.lShoulder} className={styles.rdArm} thickness={6} />
           <Limb a={p.chest} b={p.rShoulder} className={styles.rdArm} thickness={6} />
-          <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={8} />
-          <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={8} />
-          <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={7} />
-          <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={7} />
+          {!p.severed?.armLeft && (
+            <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={7} />
+          )}
+          {!p.severed?.armRight && (
+            <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={7} />
+          )}
+          {!p.severed?.legLeft && (
+            <>
+              <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={8} />
+              <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={7} />
+            </>
+          )}
+          {!p.severed?.legRight && (
+            <>
+              <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={8} />
+              <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={7} />
+            </>
+          )}
 
           <div
             className={styles.rdHead}
@@ -479,10 +541,18 @@ function Player({
             <div className={`${styles.rdEye} ${styles.rdEyeRight}`} />
           </div>
 
-          <div className={styles.rdJoint} style={{ left: p.lHand.x - 4, top: p.lHand.y - 4 }} />
-          <div className={styles.rdJoint} style={{ left: p.rHand.x - 4, top: p.rHand.y - 4 }} />
-          <div className={styles.rdFoot} style={{ left: p.lFoot.x - 5, top: p.lFoot.y - 3 }} />
-          <div className={styles.rdFoot} style={{ left: p.rFoot.x - 5, top: p.rFoot.y - 3 }} />
+          {!p.severed?.armLeft && (
+            <div className={styles.rdJoint} style={{ left: p.lHand.x - 4, top: p.lHand.y - 4 }} />
+          )}
+          {!p.severed?.armRight && (
+            <div className={styles.rdJoint} style={{ left: p.rHand.x - 4, top: p.rHand.y - 4 }} />
+          )}
+          {!p.severed?.legLeft && (
+            <div className={styles.rdFoot} style={{ left: p.lFoot.x - 5, top: p.lFoot.y - 3 }} />
+          )}
+          {!p.severed?.legRight && (
+            <div className={styles.rdFoot} style={{ left: p.rFoot.x - 5, top: p.rFoot.y - 3 }} />
+          )}
         </div>
 
         {bloodSpray.map((d) => (
@@ -512,7 +582,7 @@ function Player({
     <div
       className={styles.player}
       style={{
-        top: `${drawY}px`,
+        top: `${drawY - recoil.kick}px`,
         transform: `rotate(${tilt}deg)`,
       }}
     >
