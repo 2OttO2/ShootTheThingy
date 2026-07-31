@@ -335,16 +335,23 @@ function App() {
 
     if (hitTop || hitBottom) {
       isDeadRef.current = true;
-      // regras (região tip/base da colisão):
-      // - CIMA + ponta  → hang (pendura, solta, cai → chão kick ou impale embaixo)
-      // - CIMA + base   → loose (corpo isolado kickando)
+      // congela o “correr” do mapa — ragdoll não deve herdar speed horizontal
+      momentum.current = 0;
+      gameSpeed.current = 0;
+      setDisplaySpeed(0);
+
+      // regras:
+      // - CIMA + ponta  → hang
       // - BAIXO + ponta → impale
-      // - BAIXO + base  → loose
+      // - base (cima/baixo) → loose
       const hit = hitBottom || hitTop;
       let type = "spike_loose";
-      if (hitTop && hitTop.region === "tip") type = "spike_hang";
+      if (hitTop && !hitBottom && hitTop.region === "tip") type = "spike_hang";
       else if (hitBottom && hitBottom.region === "tip") type = "spike_impale";
-      else type = "spike_loose"; // base (cima ou baixo)
+      else if (hitBottom && hitBottom.region === "base") type = "spike_loose";
+      else if (hitTop && hitTop.region === "base") type = "spike_loose";
+      else if (hitBottom) type = "spike_impale"; // fallback baixo
+      else type = "spike_hang"; // fallback cima
 
       const tip = hit.tip || { x: player.x + player.width / 2, y: player.y };
       setDeathSpike({
@@ -569,4 +576,5 @@ function App() {
 }
 
 export default App;
+
 
