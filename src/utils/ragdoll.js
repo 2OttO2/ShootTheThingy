@@ -1,6 +1,6 @@
 /**
- * Facade — Player continua importando daqui.
- * Implementação real: physics/ragdollController.js
+ * Facade do ragdoll — agora powered by Planck.js (Box2D).
+ * Player continua importando daqui.
  */
 export {
   createRagdoll,
@@ -8,4 +8,5 @@ export {
   ragdollSnapshot,
   angleBetween,
   dist,
-} from "../physics/ragdollController.js";
+} from "../physics/planckRagdoll.js";
+
