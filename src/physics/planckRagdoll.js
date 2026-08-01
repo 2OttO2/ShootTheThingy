@@ -20,7 +20,7 @@ Settings.maxTranslationSquared = 25 * 25;
 Settings.maxRotation = 0.85 * Math.PI;
 Settings.maxRotationSquared = (0.85 * Math.PI) ** 2;
 
-const GRAVITY = 980;
+const GRAVITY = 520;
 const VEL_ITERS = 10;
 const POS_ITERS = 4;
 const NO_SELF = { groupIndex: -1 };
@@ -204,7 +204,7 @@ export function createRagdoll(x, y, opts = {}) {
   ground.createFixture({
     shape: Edge(Vec2(-4000, floorY), Vec2(4000, floorY)),
     friction: 0.7,
-    restitution: 0.25,
+    restitution: 0.5,
   });
   ground.setUserData({ kind: "floor" });
   world.createBody().createFixture(Edge(Vec2(-4000, ceilingY), Vec2(4000, ceilingY)));
@@ -434,11 +434,11 @@ function applyFloorKick(ragdoll) {
   ragdoll.floorKicked = true;
   const s = ragdoll.sideSpin || 1;
   // kick leve tipo objeto caindo de alto
-  impulse(hip, s * 25, -90);
-  impulse(chest, s * 15, -50);
-  impulse(head, s * 10, -30);
-  if (lFoot) impulse(lFoot, 70 * s, -40);
-  if (rFoot) impulse(rFoot, -75 * s, -45);
+  impulse(hip, s * 40, -140);
+  impulse(chest, s * 25, -80);
+  impulse(head, s * 15, -50);
+  if (lFoot) impulse(lFoot, 90 * s, -60);
+  if (rFoot) impulse(rFoot, -95 * s, -65);
   if (lHand) impulse(lHand, -30 * s, -20);
   if (rHand) impulse(rHand, 30 * s, -20);
 

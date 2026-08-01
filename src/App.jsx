@@ -114,6 +114,8 @@ function App() {
   const teto = TETO_HEIGHT;
   const floor = window.innerHeight - GROUND_HEIGHT - PLAYER_SIZE;
 
+
+
   // =====================
   // NAVEGAÇÃO
   // =====================
@@ -250,12 +252,10 @@ function App() {
     ];
     setDebugHitboxes(hitboxes);
 
-    // player physics
+    // player physics — arcade estável (não Planck)
     speed.current += GRAVITY * dt;
     playerY.current += speed.current * dt;
 
-    // queda converte um pouco da velocidade vertical em speed horizontal
-    // (não muito: ganho pequeno + cap por frame; nunca passa do MAX)
     if (speed.current > 0) {
       const fallGain = Math.min(
         speed.current * FALL_SPEED_GAIN * dt,
@@ -267,14 +267,12 @@ function App() {
       );
     }
 
-    // bounce teto — perde velocidade vertical e horizontal
     if (playerY.current <= teto) {
       playerY.current = teto;
       speed.current *= -BOUNCE;
       momentum.current *= 1 - BOUNCE_SPEED_LOSS;
     }
 
-    // bounce chão — perde velocidade vertical e horizontal
     if (playerY.current >= floor) {
       playerY.current = floor;
       speed.current *= -BOUNCE;
@@ -332,9 +330,9 @@ function App() {
 
     // colisão — hitbox alinhada ao sprite do player (48×64 em x=300)
     const player = {
-      x: 300 + 6,           // margem interna (não usa a borda vazia)
+      x: 300 + 8,
       y: playerY.current + 4,
-      width: 36,
+      width: 32,
       height: 56,
     };
 
@@ -452,7 +450,7 @@ function App() {
         return;
       }
 
-      // atira
+      // atira — recoil arcade (impact da arma)
       const recoil = selectedWeapon ? selectedWeapon.impact : JUMP_FORCE;
       const cooldown = selectedWeapon ? selectedWeapon.firerate : 2000;
 
