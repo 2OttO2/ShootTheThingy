@@ -15,6 +15,7 @@ import BloodLayer from "./components/Blood/BloodLayer.jsx";
 import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
 import { findSpikeCollision } from "./utils/collision.js";
+import { classifyDeath, classifyStall, DeathType } from "./death/index.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
 
 import {
@@ -282,7 +283,13 @@ function App() {
       zeroSpeedTimer.current += deltaTime;
       if (zeroSpeedTimer.current >= STALL_DEATH_MS) {
         isDeadRef.current = true;
-        setDeathType("stall");
+        const stallEvent = classifyStall({
+          velocityY: speed.current,
+          playerX: 300,
+          playerY: playerY.current,
+        });
+        setDeathType(stallEvent.type);
+        setDeathSpike(null);
         setGameState(GAME_STATE.DYING);
         if (deathDelayTimeout.current) {
           clearTimeout(deathDelayTimeout.current);
@@ -339,43 +346,25 @@ function App() {
       gameSpeed.current = 0;
       setDisplaySpeed(0);
 
-      // Happy Wheels-ish: tipo depende de lado + região + parte do corpo + impacto
-      const hit = hitBottom || hitTop;
-      const region = hit.region || "tip";
-      const part = hit.bodyPart || "torso";
-      const absVy = Math.abs(speed.current);
-      const impact = Math.max(0.7, Math.min(2.1, 0.7 + absVy / 14));
-      const absOff = Math.abs(hit.offsetX || 0);
-
-      let type = "spike_flop";
-      if (hit.side === "top") {
-        if (region === "tip" && part === "head") type = "spike_hang";
-        else if (region === "tip" && part === "torso") type = "spike_impale";
-        else if (region === "tip" && part === "legs") type = "spike_spin";
-        else if (region === "base" && absOff > 12) type = "spike_spin";
-        else if (region === "base") type = "spike_bounce";
-        else type = "spike_hang";
-      } else {
-        // bottom
-        if (region === "tip" && part === "legs") type = "spike_impale_leg";
-        else if (region === "tip" && part === "head") type = "spike_spin";
-        else if (region === "tip") type = "spike_impale";
-        else if (region === "base" && absVy > 10) type = "spike_bounce";
-        else if (region === "base" && absOff > 14) type = "spike_spin";
-        else type = "spike_flop";
-      }
-
-      const tip = hit.tip || { x: player.x + player.width / 2, y: player.y };
-      setDeathSpike({
-        tipX: tip.x,
-        tipY: tip.y,
-        side: hit.side,
-        region,
-        bodyPart: part,
-        offsetX: hit.offsetX || 0,
-        impact,
+      // Classificação única em death/classify.js
+      const event = classifyDeath(hitTop, hitBottom, {
+        velocityY: speed.current,
+        playerX: player.x,
+        playerY: player.y,
+        playerW: player.width,
+        playerH: player.height,
       });
-      setDeathType(type);
+
+      setDeathSpike({
+        tipX: event.tip?.x,
+        tipY: event.tip?.y,
+        side: event.side,
+        region: event.region,
+        bodyPart: event.bodyPart,
+        offsetX: event.offsetX,
+        impact: event.impact,
+      });
+      setDeathType(event.type);
       setGameState(GAME_STATE.DYING);
 
       if (deathDelayTimeout.current) {
@@ -591,5 +580,4 @@ function App() {
 }
 
 export default App;
-
 

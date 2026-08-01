@@ -162,4 +162,3 @@ export function findSpikeCollision(player, hitboxes) {
   }
   return null;
 }
-

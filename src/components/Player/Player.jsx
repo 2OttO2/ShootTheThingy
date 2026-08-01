@@ -434,8 +434,8 @@ function Player({
         for (const piece of list) {
           piece.vy += 0.35 * dtN;
           piece.vx *= 0.995;
-          // sem scroll do mapa — player é fixo na tela
-          piece.x += piece.vx * dtN;
+          // some pra esquerda com o “avanço” do mapa
+          piece.x += piece.vx * dtN - 1.6 * dtN;
           piece.y += piece.vy * dtN;
           piece.rot += piece.vr * dtN;
           piece.life -= dtN * 0.016;
@@ -782,5 +782,4 @@ function Player({
 }
 
 export default Player;
-
 
