@@ -163,6 +163,57 @@ function TorsoBlock({ chest, hip }) {
   );
 }
 
+
+/** Torção do corpo vivo: I, torque, ω, θ (deg / deg/s) */
+function torsionInertia(limbs) {
+  // torso base + membros intactos aumentam I (gira mais devagar)
+  let I = 0.55;
+  if (!limbs?.legLeft?.severed) I += 0.12;
+  if (!limbs?.legRight?.severed) I += 0.12;
+  if (!limbs?.armLeft?.severed) I += 0.08;
+  if (!limbs?.armRight?.severed) I += 0.08;
+  return I;
+}
+
+function torsionShotImpulse(omega, limbs, hitLeftPct = 50) {
+  const I = torsionInertia(limbs);
+  // alavanca: tiro longe do centro gira mais
+  const lever = (hitLeftPct - 50) / 50; // -1..1
+  const side = lever >= 0 ? 1 : -1;
+  const mag = (520 + Math.random() * 280) / I;
+  // força no sentido da alavanca (ou aleatório se centro)
+  const dir = Math.abs(lever) < 0.15 ? (Math.random() > 0.5 ? 1 : -1) : side;
+  let next = omega + dir * mag * (0.65 + Math.abs(lever) * 0.55);
+  return Math.max(-900, Math.min(900, next));
+}
+
+function stepTorsion({ angle, omega, limbs, velocityY, onFloor, dtSec }) {
+  const I = torsionInertia(limbs);
+  // torque aerodinâmico + queda (corpo "rola" no ar)
+  const tauDrag = -0.55 * omega;
+  const tauQuad = -0.0012 * omega * Math.abs(omega);
+  const tauFall = velocityY * 2.2; // queda aumenta rotação no sentido do movimento
+  let a = (tauDrag + tauQuad + tauFall) / I;
+
+  let w = omega + a * dtSec;
+  // atrito de contato com chão — freia, não endireita
+  if (onFloor) {
+    w *= Math.pow(0.15, dtSec); // freio forte
+    // se spin baixo no chão, congela (deitado em qualquer ângulo)
+    if (Math.abs(w) < 12) w = 0;
+  } else {
+    w *= Math.pow(0.995, dtSec * 60); // atrito do ar fraco
+  }
+
+  w = Math.max(-900, Math.min(900, w));
+  let th = angle + w * dtSec;
+  // unwrap só pra não estourar float
+  if (th > 1080) th -= 720;
+  if (th < -1080) th += 720;
+  return { angle: th, omega: w };
+}
+
+
 function emptyLimbState() {
   return {
     legLeft: { hits: 0, severed: false, holes: [] },
@@ -193,9 +244,10 @@ function Player({
   // ângulo contínuo do corpo (não “nariz de avião”)
   const [bodyAngle, setBodyAngle] = useState(0);
   const [kickY, setKickY] = useState(0);
-  const angleRef = useRef(0);
-  const spinRef = useRef(0); // deg por frame ~16ms
+  const angleRef = useRef(0); // θ graus
+  const spinRef = useRef(0); // ω graus/segundo
   const kickRef = useRef(0);
+  const lastHitLeftRef = useRef(50); // onde o tiro acertou (alavanca)
 
   const lastTick = useRef(0);
   const velocityRef = useRef(velocityY);
@@ -293,6 +345,8 @@ function Player({
       part: targetPart,
     };
 
+    if (spot) lastHitLeftRef.current = spot.left;
+
     setWounds((prev) => {
       let next = [...prev, wound];
       if (severedNow && targetPart) {
@@ -339,15 +393,14 @@ function Player({
     if (deathType !== "none") return;
     lastTick.current = shotTick;
     applyShot();
-    // kickback do corpo (pra cima/trás), não balanço L-R
-    // cada tiro = impulso de rotação real (pode virar de cabeça pra baixo)
-    const dir = Math.random() > 0.45 ? 1 : -1;
-    // 50–110 deg de spin por tiro — acumula se atirar de novo
-    const spinBoost = dir * (55 + Math.random() * 55);
-    spinRef.current += spinBoost;
-    // clamp spin pra não ficar infinito demais
-    spinRef.current = Math.max(-140, Math.min(140, spinRef.current));
-    kickRef.current = 8 + Math.random() * 10;
+    // torção: impulso angular ∝ 1/I e alavanca do ponto de impacto
+    const hitLeft = lastHitLeftRef.current;
+    spinRef.current = torsionShotImpulse(
+      spinRef.current,
+      limbsRef.current,
+      hitLeft
+    );
+    kickRef.current = 10 + Math.random() * 12;
     setKickY(kickRef.current);
   }, [shotTick, deathType, playerX]);
 
@@ -626,35 +679,33 @@ function Player({
     };
   }, [wounds.length, limbs, deathType, playerX, bloodRef]);
 
-    // integração de spin — corpo gira de verdade, não “nariz de avião”
+    // integração de torção (I, torque, ω)
   useEffect(() => {
     if (deathType !== "none") return;
     let raf;
     let last = 0;
     const tick = (time) => {
       if (!last) last = time;
-      const dt = Math.min(32, time - last) / 16.67;
+      const dtMs = Math.min(32, time - last);
       last = time;
+      const dtSec = dtMs / 1000;
 
-      // torque leve pela velocidade vertical (queda acelera o giro, subida também)
-      const vy = velocityRef.current;
-      spinRef.current += vy * 0.08 * dt;
-
-      // atrito: no ar quase não para; “chão” freia mais
       const onFloor =
         typeof window !== "undefined" &&
-        drawYRef.current >= window.innerHeight - 100;
-      const friction = onFloor ? 0.88 : 0.995;
-      spinRef.current *= Math.pow(friction, dt);
+        drawYRef.current >= window.innerHeight - 90;
 
-      // kick vertical decai
-      kickRef.current *= Math.pow(0.85, dt);
+      const next = stepTorsion({
+        angle: angleRef.current,
+        omega: spinRef.current,
+        limbs: limbsRef.current,
+        velocityY: velocityRef.current,
+        onFloor,
+        dtSec,
+      });
+      angleRef.current = next.angle;
+      spinRef.current = next.omega;
 
-      angleRef.current += spinRef.current * 0.55 * dt;
-      // mantém ângulo legível (pode dar voltas)
-      if (angleRef.current > 720) angleRef.current -= 720;
-      if (angleRef.current < -720) angleRef.current += 720;
-
+      kickRef.current *= Math.pow(0.12, dtSec);
       setBodyAngle(angleRef.current);
       setKickY(kickRef.current);
 
@@ -666,9 +717,9 @@ function Player({
     };
   }, [deathType]);
 
-  // feridas empurram o spin base (corpo mole)
-  const hurtSpin = wounds.length * 3;
-  const tilt = bodyAngle + (spinRef.current >= 0 ? hurtSpin * 0.15 : -hurtSpin * 0.15);
+  // membros levemente atrasados no giro = sensação de torção do tronco
+  const limbLag = Math.max(-28, Math.min(28, -spinRef.current * 0.03));
+  const tilt = bodyAngle;
   const isDying = deathType !== "none";
 
 
@@ -734,10 +785,18 @@ function Player({
           <div className={styles.mouth} />
         </div>
         <div className={styles.torso} />
-        {!limbs.armLeft.severed && <div className={styles.armLeft} />}
-        {!limbs.armRight.severed && <div className={styles.armRight} />}
-        {!limbs.legLeft.severed && <div className={styles.legLeft} />}
-        {!limbs.legRight.severed && <div className={styles.legRight} />}
+        {!limbs.armLeft.severed && (
+          <div className={styles.armLeft} style={{ transform: `rotate(${18 + limbLag}deg)` }} />
+        )}
+        {!limbs.armRight.severed && (
+          <div className={styles.armRight} style={{ transform: `rotate(${-18 - limbLag}deg)` }} />
+        )}
+        {!limbs.legLeft.severed && (
+          <div className={styles.legLeft} style={{ transform: `rotate(${limbLag * 0.5}deg)` }} />
+        )}
+        {!limbs.legRight.severed && (
+          <div className={styles.legRight} style={{ transform: `rotate(${-limbLag * 0.5}deg)` }} />
+        )}
 
         {limbs.armLeft.severed && <div className={`${styles.stump} ${styles.stumpArmLeft}`} />}
         {limbs.armRight.severed && <div className={`${styles.stump} ${styles.stumpArmRight}`} />}
