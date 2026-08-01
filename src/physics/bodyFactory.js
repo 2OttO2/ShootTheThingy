@@ -1,5 +1,5 @@
 /**
- * Cria esqueleto humanoide em pose em pé e helpers de layout.
+ * Esqueleto equilibrado: mole o bastante pra balançar, firme o bastante pra não virar fio.
  */
 import { point, stick, zeroVel } from "./verlet.js";
 
@@ -46,31 +46,28 @@ export function createStandingBody(x, y, severed = {}) {
   if (!sev.legLeft) points.push(lKnee, lFoot);
   if (!sev.legRight) points.push(rKnee, rFoot);
 
+  // meio-termo: tronco firme, membros macios mas com osso
   const sticks = [
-    stick(head, chest, 17, 1),
-    stick(chest, hip, 20, 1),
-    stick(chest, lShoulder, 11, 0.95),
-    stick(chest, rShoulder, 11, 0.95),
-    stick(lShoulder, rShoulder, 22, 0.5),
+    stick(head, chest, 17, 0.85),
+    stick(chest, hip, 20, 0.8),
+    stick(chest, lShoulder, 11, 0.7),
+    stick(chest, rShoulder, 11, 0.7),
+    stick(lShoulder, rShoulder, 22, 0.4),
   ];
-  if (!sev.armLeft) sticks.push(stick(lShoulder, lHand, 18, 0.8));
-  if (!sev.armRight) sticks.push(stick(rShoulder, rHand, 18, 0.8));
+  if (!sev.armLeft) sticks.push(stick(lShoulder, lHand, 18, 0.45));
+  if (!sev.armRight) sticks.push(stick(rShoulder, rHand, 18, 0.45));
   if (!sev.legLeft) {
-    sticks.push(stick(hip, lKnee, 14, 0.88));
-    sticks.push(stick(lKnee, lFoot, 14, 0.88));
+    sticks.push(stick(hip, lKnee, 14, 0.5));
+    sticks.push(stick(lKnee, lFoot, 14, 0.45));
   }
   if (!sev.legRight) {
-    sticks.push(stick(hip, rKnee, 14, 0.88));
-    sticks.push(stick(rKnee, rFoot, 14, 0.88));
-  }
-  if (!sev.legLeft && !sev.legRight) {
-    sticks.push(stick(lKnee, rKnee, 16, 0.25));
+    sticks.push(stick(hip, rKnee, 14, 0.5));
+    sticks.push(stick(rKnee, rFoot, 14, 0.45));
   }
 
   return { parts, points, sticks, severed: sev };
 }
 
-/** Reposiciona membros em pose natural relativa a chest/hip */
 export function layoutLimbs(parts, sev, side = 1) {
   const { chest, hip, lShoulder, rShoulder, lHand, rHand, lKnee, rKnee, lFoot, rFoot } =
     parts;
@@ -83,29 +80,30 @@ export function layoutLimbs(parts, sev, side = 1) {
   zeroVel(rShoulder);
 
   if (!sev.armLeft) {
-    lHand.x = lShoulder.x - 6 * side;
+    lHand.x = lShoulder.x - 8 * side;
     lHand.y = lShoulder.y + 16;
     zeroVel(lHand);
   }
   if (!sev.armRight) {
-    rHand.x = rShoulder.x + 6 * side;
+    rHand.x = rShoulder.x + 8 * side;
     rHand.y = rShoulder.y + 16;
     zeroVel(rHand);
   }
   if (!sev.legLeft) {
-    lKnee.x = hip.x - 7;
+    lKnee.x = hip.x - 8;
     lKnee.y = hip.y + 12;
-    lFoot.x = hip.x - 9;
-    lFoot.y = hip.y + 24;
+    lFoot.x = hip.x - 10;
+    lFoot.y = hip.y + 26;
     zeroVel(lKnee);
     zeroVel(lFoot);
   }
   if (!sev.legRight) {
-    rKnee.x = hip.x + 7;
+    rKnee.x = hip.x + 8;
     rKnee.y = hip.y + 12;
-    rFoot.x = hip.x + 9;
-    rFoot.y = hip.y + 24;
+    rFoot.x = hip.x + 10;
+    rFoot.y = hip.y + 26;
     zeroVel(rKnee);
     zeroVel(rFoot);
   }
 }
+

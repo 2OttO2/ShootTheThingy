@@ -122,9 +122,10 @@ function makeSprayBurst({ count, originLeft, originTop, velocityY, moveSpeed, de
   return particles;
 }
 
-function Limb({ a, b, className, thickness = 8 }) {
+function Limb({ a, b, className, thickness = 8, maxLen = 36 }) {
   if (!a || !b) return null;
-  const length = Math.max(3, dist(a, b));
+  // clamp visual length — physics may stretch, draw never turns to spaghetti
+  const length = Math.min(maxLen, Math.max(4, dist(a, b)));
   const angle = angleBetween(a, b);
   return (
     <div
@@ -136,6 +137,26 @@ function Limb({ a, b, className, thickness = 8 }) {
         height: thickness,
         transform: `rotate(${angle}deg)`,
         transformOrigin: "0 50%",
+      }}
+    />
+  );
+}
+
+/** Torso como bloco goofy (não só uma barra fina) */
+function TorsoBlock({ chest, hip }) {
+  if (!chest || !hip) return null;
+  const mx = (chest.x + hip.x) / 2;
+  const my = (chest.y + hip.y) / 2;
+  const angle = angleBetween(chest, hip);
+  const h = Math.min(28, Math.max(16, dist(chest, hip)));
+  return (
+    <div
+      className={styles.rdTorsoBlock}
+      style={{
+        left: mx - 12,
+        top: my - h / 2,
+        height: h,
+        transform: `rotate(${angle}deg)`,
       }}
     />
   );
@@ -616,33 +637,36 @@ function Player({
     return (
       <>
         <div className={styles.ragdollLayer}>
-          {/* torso primeiro (atrás) */}
-          <Limb a={p.chest} b={p.hip} className={styles.rdTorso} thickness={16} />
-          <Limb a={p.head} b={p.chest} className={styles.rdNeck} thickness={5} />
-          <Limb a={p.chest} b={p.lShoulder} className={styles.rdShoulder} thickness={7} />
-          <Limb a={p.chest} b={p.rShoulder} className={styles.rdShoulder} thickness={7} />
-          {!p.severed?.armLeft && (
-            <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={6} />
-          )}
-          {!p.severed?.armRight && (
-            <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={6} />
-          )}
+          {/* pernas atrás */}
           {!p.severed?.legLeft && (
             <>
-              <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={9} />
-              <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={8} />
+              <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={10} maxLen={22} />
+              <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={9} maxLen={22} />
             </>
           )}
           {!p.severed?.legRight && (
             <>
-              <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={9} />
-              <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={8} />
+              <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={10} maxLen={22} />
+              <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={9} maxLen={22} />
             </>
           )}
 
+          {/* braços */}
+          {!p.severed?.armLeft && (
+            <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={8} maxLen={24} />
+          )}
+          {!p.severed?.armRight && (
+            <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={8} maxLen={24} />
+          )}
+
+          {/* tronco goofy (bloco, não fio) */}
+          <TorsoBlock chest={p.chest} hip={p.hip} />
+          <Limb a={p.head} b={p.chest} className={styles.rdNeck} thickness={6} maxLen={20} />
+
+          {/* cabeça */}
           <div
             className={styles.rdHead}
-            style={{ left: p.head.x - 16, top: p.head.y - 16 }}
+            style={{ left: p.head.x - 15, top: p.head.y - 15 }}
           >
             <div className={styles.rdEye} />
             <div className={`${styles.rdEye} ${styles.rdEyeRight}`} />
@@ -650,16 +674,16 @@ function Player({
           </div>
 
           {!p.severed?.armLeft && (
-            <div className={styles.rdHand} style={{ left: p.lHand.x - 5, top: p.lHand.y - 5 }} />
+            <div className={styles.rdHand} style={{ left: p.lHand.x - 6, top: p.lHand.y - 6 }} />
           )}
           {!p.severed?.armRight && (
-            <div className={styles.rdHand} style={{ left: p.rHand.x - 5, top: p.rHand.y - 5 }} />
+            <div className={styles.rdHand} style={{ left: p.rHand.x - 6, top: p.rHand.y - 6 }} />
           )}
           {!p.severed?.legLeft && (
-            <div className={styles.rdFoot} style={{ left: p.lFoot.x - 6, top: p.lFoot.y - 4 }} />
+            <div className={styles.rdFoot} style={{ left: p.lFoot.x - 7, top: p.lFoot.y - 4 }} />
           )}
           {!p.severed?.legRight && (
-            <div className={styles.rdFoot} style={{ left: p.rFoot.x - 6, top: p.rFoot.y - 4 }} />
+            <div className={styles.rdFoot} style={{ left: p.rFoot.x - 7, top: p.rFoot.y - 4 }} />
           )}
         </div>
 
@@ -782,4 +806,5 @@ function Player({
 }
 
 export default Player;
+
 

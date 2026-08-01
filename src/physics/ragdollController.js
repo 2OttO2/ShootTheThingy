@@ -70,9 +70,13 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
       if (ragdoll.hangTimer <= 0) {
         ragdoll.hangReleased = true;
         unpin(ragdoll.parts.head);
-        impulse(ragdoll.parts.head, 0, 1.4);
-        impulse(ragdoll.parts.chest, 0, 1.8);
-        impulse(ragdoll.parts.hip, 0, 2.0);
+        const s = ragdoll.sideSpin || 1;
+        impulse(ragdoll.parts.head, s * 0.5, 1.6);
+        impulse(ragdoll.parts.chest, s * 0.8, 2.2);
+        impulse(ragdoll.parts.hip, s * 1.2, 2.8);
+        // braços abrem no soltar
+        if (!ragdoll.severed.armLeft) impulse(ragdoll.parts.lHand, -2, 1.5);
+        if (!ragdoll.severed.armRight) impulse(ragdoll.parts.rHand, 2, 1.5);
       }
     }
   }

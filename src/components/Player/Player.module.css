@@ -349,14 +349,26 @@
 
 .rdHead {
   position: absolute;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 28px;
   background: #f5d0a9;
   border: 2px solid #333;
-  border-radius: 50%;
-  z-index: 4;
+  border-radius: 50% 50% 45% 45%;
+  z-index: 5;
   box-sizing: border-box;
 }
+
+.rdTorsoBlock {
+  position: absolute;
+  width: 24px;
+  background: #6c5ce7;
+  border: 2px solid #333;
+  border-radius: 8px;
+  z-index: 3;
+  box-sizing: border-box;
+  transform-origin: center center;
+}
+
 
 .rdEye {
   position: absolute;
@@ -394,8 +406,8 @@
   position: absolute;
   background: #f5d0a9;
   border: 2px solid #333;
-  border-radius: 5px;
-  z-index: 1;
+  border-radius: 6px;
+  z-index: 2;
   box-sizing: border-box;
 }
 
@@ -403,7 +415,7 @@
   position: absolute;
   background: #2d3436;
   border: 2px solid #333;
-  border-radius: 4px;
+  border-radius: 5px;
   z-index: 1;
   box-sizing: border-box;
 }
@@ -411,11 +423,22 @@
 .rdFoot {
   position: absolute;
   width: 14px;
-  height: 8px;
+  height: 9px;
   background: #2d3436;
   border: 2px solid #333;
   border-radius: 3px;
-  z-index: 3;
+  z-index: 4;
+  box-sizing: border-box;
+}
+
+.rdHand {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #f5d0a9;
+  border: 2px solid #333;
+  border-radius: 50%;
+  z-index: 4;
   box-sizing: border-box;
 }
 
@@ -541,3 +564,4 @@
   border-radius: 50%;
   z-index: 3;
 }
+
