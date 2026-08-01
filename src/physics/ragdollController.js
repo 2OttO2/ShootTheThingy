@@ -1,6 +1,6 @@
 /**
- * Controlador de ragdoll na morte.
- * Mantém a API createRagdoll / stepRagdoll / ragdollSnapshot que o Player já usa.
+ * Controlador de ragdoll — API estável pro Player.
+ * Sem scroll artificial: o corpo morre no lugar (spikes já congelam no App).
  */
 import { DeathType } from "../death/types.js";
 import { applyDeathBehavior, floorKick } from "../death/behaviors.js";
@@ -15,12 +15,6 @@ import {
   dist,
 } from "./verlet.js";
 
-const DEATH_SCROLL = 1.6;
-
-/**
- * Compatível com a API antiga do Player.
- * opts.deathType ou opts.event (DeathEvent completo)
- */
 export function createRagdoll(x, y, opts = {}) {
   const floorY =
     opts.floorY ??
@@ -66,36 +60,34 @@ export function createRagdoll(x, y, opts = {}) {
 export function stepRagdoll(ragdoll, dtNorm = 1) {
   if (!ragdoll || !ragdoll.alive) return;
 
-  const scroll = DEATH_SCROLL * dtNorm;
   const dtSec = dtNorm * (16.67 / 1000);
 
-  // hang: mantém pin, depois solta (sem auto-impale)
+  // HANG: cabeça fixa na ponta → solta → cai
   if (ragdoll.deathType === DeathType.HANG) {
     if (!ragdoll.hangReleased) {
       ragdoll.hangTimer -= dtSec;
-      ragdoll.spikeTipX -= scroll;
       setPinned(ragdoll.parts.head, ragdoll.spikeTipX, ragdoll.spikeTipY);
       if (ragdoll.hangTimer <= 0) {
         ragdoll.hangReleased = true;
         unpin(ragdoll.parts.head);
-        impulse(ragdoll.parts.head, 0, 1.6);
-        impulse(ragdoll.parts.chest, 0, 2);
-        impulse(ragdoll.parts.hip, 0, 2.3);
+        impulse(ragdoll.parts.head, 0, 1.4);
+        impulse(ragdoll.parts.chest, 0, 1.8);
+        impulse(ragdoll.parts.hip, 0, 2.0);
       }
     }
   }
 
+  // IMPALE: peito fixo na ponta
   if (ragdoll.deathType === DeathType.IMPALE) {
-    ragdoll.spikeTipX -= scroll;
     const c = ragdoll.parts.chest;
     const hip = ragdoll.parts.hip;
     let targetY = c.y;
     if (ragdoll.spikeSide === "bottom") {
-      targetY = Math.min(c.y + 0.12 * dtNorm, ragdoll.spikeTipY + 36);
+      targetY = Math.min(c.y + 0.1 * dtNorm, ragdoll.spikeTipY + 34);
     } else {
       targetY = Math.min(
-        c.y + 0.07 * dtNorm,
-        Math.max(22, ragdoll.spikeTipY - 4)
+        c.y + 0.06 * dtNorm,
+        Math.max(24, ragdoll.spikeTipY - 4)
       );
     }
     setPinned(c, ragdoll.spikeTipX, targetY);
@@ -105,8 +97,8 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
     hip.oy = hip.y;
   }
 
+  // IMPALE_LEG: pé/hip fixo
   if (ragdoll.deathType === DeathType.IMPALE_LEG) {
-    ragdoll.spikeTipX -= scroll;
     for (const p of ragdoll.points) {
       if (p.pinned) {
         p.x = ragdoll.spikeTipX;
@@ -115,8 +107,10 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
     }
   }
 
-  stepBody(ragdoll, dtNorm, { scroll });
+  // física (sem scroll)
+  stepBody(ragdoll, dtNorm, { scroll: 0 });
 
+  // kick no chão (não em impale)
   if (
     !ragdoll.floorKicked &&
     ragdoll.deathType !== DeathType.IMPALE &&
@@ -125,10 +119,6 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
   ) {
     ragdoll.floorKicked = true;
     floorKick(ragdoll, ragdoll.sideSpin);
-  }
-
-  if (ragdoll.parts.chest.x < -100) {
-    ragdoll.alive = false;
   }
 }
 
@@ -153,3 +143,4 @@ export function ragdollSnapshot(ragdoll) {
 }
 
 export { angleBetween, dist };
+

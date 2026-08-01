@@ -1,12 +1,13 @@
 import { DeathType, createDeathEvent } from "./types.js";
 
 /**
- * ÚNICA tabela: colisão + velocidade → DeathEvent.
- * Não anima, não mexe em React — só classifica.
+ * Classificação estável e previsível.
  *
- * @param {object|null} hitTop - resultado de findSpikeCollision
- * @param {object|null} hitBottom
- * @param {{ velocityY: number, playerX: number, playerY: number, playerW?: number, playerH?: number }} ctx
+ * top  + tip  → hang
+ * top  + base → bounce
+ * bottom + tip → impale (torso) / impale_leg (pernas)
+ * bottom + base → flop
+ * stall → stall
  */
 export function classifyDeath(hitTop, hitBottom, ctx = {}) {
   const velocityY = ctx.velocityY ?? 0;
@@ -22,12 +23,12 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
     });
   }
 
+  // prioriza spike de baixo se os dois no mesmo frame
   const hit = hitBottom || hitTop;
   const region = hit.region || "tip";
   const part = hit.bodyPart || "torso";
   const absVy = Math.abs(velocityY);
-  const impact = Math.max(0.7, Math.min(2.1, 0.7 + absVy / 14));
-  const absOff = Math.abs(hit.offsetX || 0);
+  const impact = Math.max(0.8, Math.min(1.8, 0.8 + absVy / 16));
   const tip = hit.tip || {
     x: playerX + (ctx.playerW ?? 36) / 2,
     y: playerY,
@@ -36,20 +37,16 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
   let type = DeathType.FLOP;
 
   if (hit.side === "top") {
-    if (region === "tip" && part === "head") type = DeathType.HANG;
-    else if (region === "tip" && part === "torso") type = DeathType.IMPALE;
-    else if (region === "tip" && part === "legs") type = DeathType.SPIN;
-    else if (region === "base" && absOff > 12) type = DeathType.SPIN;
-    else if (region === "base") type = DeathType.BOUNCE;
-    else type = DeathType.HANG;
+    type = region === "base" ? DeathType.BOUNCE : DeathType.HANG;
   } else {
     // bottom
-    if (region === "tip" && part === "legs") type = DeathType.IMPALE_LEG;
-    else if (region === "tip" && part === "head") type = DeathType.SPIN;
-    else if (region === "tip") type = DeathType.IMPALE;
-    else if (region === "base" && absVy > 10) type = DeathType.BOUNCE;
-    else if (region === "base" && absOff > 14) type = DeathType.SPIN;
-    else type = DeathType.FLOP;
+    if (region === "base") {
+      type = DeathType.FLOP;
+    } else if (part === "legs") {
+      type = DeathType.IMPALE_LEG;
+    } else {
+      type = DeathType.IMPALE;
+    }
   }
 
   return createDeathEvent({
@@ -66,7 +63,6 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
   });
 }
 
-/** Morte por ficar parado */
 export function classifyStall(ctx = {}) {
   return createDeathEvent({
     type: DeathType.STALL,
@@ -75,3 +71,4 @@ export function classifyStall(ctx = {}) {
     velocityY: ctx.velocityY ?? 0,
   });
 }
+
