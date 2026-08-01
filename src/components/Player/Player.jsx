@@ -190,8 +190,12 @@ function Player({
   const [vitalIndex, setVitalIndex] = useState(0);
   const [detachedLimbs, setDetachedLimbs] = useState([]); // membros isolados caindo
   const detachedRef = useRef([]);
-  const [recoil, setRecoil] = useState({ rot: 0, kick: 0 }); // reação ao tiro
-  const recoilRef = useRef({ rot: 0, kick: 0 });
+  // ângulo contínuo do corpo (não “nariz de avião”)
+  const [bodyAngle, setBodyAngle] = useState(0);
+  const [kickY, setKickY] = useState(0);
+  const angleRef = useRef(0);
+  const spinRef = useRef(0); // deg por frame ~16ms
+  const kickRef = useRef(0);
 
   const lastTick = useRef(0);
   const velocityRef = useRef(velocityY);
@@ -336,14 +340,15 @@ function Player({
     lastTick.current = shotTick;
     applyShot();
     // kickback do corpo (pra cima/trás), não balanço L-R
-    // reação forte ao tiro — não fica "em pé estático"
-    const dir = Math.random() > 0.5 ? 1 : -1;
-    const kick = {
-      rot: dir * (14 + Math.random() * 12), // tomba pro lado
-      kick: 10 + Math.random() * 8,         // sobe / treme
-    };
-    recoilRef.current = kick;
-    setRecoil(kick);
+    // cada tiro = impulso de rotação real (pode virar de cabeça pra baixo)
+    const dir = Math.random() > 0.45 ? 1 : -1;
+    // 50–110 deg de spin por tiro — acumula se atirar de novo
+    const spinBoost = dir * (55 + Math.random() * 55);
+    spinRef.current += spinBoost;
+    // clamp spin pra não ficar infinito demais
+    spinRef.current = Math.max(-140, Math.min(140, spinRef.current));
+    kickRef.current = 8 + Math.random() * 10;
+    setKickY(kickRef.current);
   }, [shotTick, deathType, playerX]);
 
   useEffect(() => {
@@ -442,8 +447,11 @@ function Player({
       lastTick.current = 0;
       limbsRef.current = empty;
       vitalRef.current = 0;
-      recoilRef.current = { rot: 0, kick: 0 };
-      setRecoil({ rot: 0, kick: 0 });
+      angleRef.current = 0;
+      spinRef.current = 0;
+      kickRef.current = 0;
+      setBodyAngle(0);
+      setKickY(0);
       detachedRef.current = [];
       setDetachedLimbs([]);
     }
@@ -618,36 +626,51 @@ function Player({
     };
   }, [wounds.length, limbs, deathType, playerX, bloodRef]);
 
-  // tilt suave só pela velocidade vertical + recoil do tiro
+    // integração de spin — corpo gira de verdade, não “nariz de avião”
   useEffect(() => {
     if (deathType !== "none") return;
-    let raf = null;
-    const tick = () => {
-      const r = recoilRef.current;
-      if (Math.abs(r.rot) > 0.15 || Math.abs(r.kick) > 0.15) {
-        r.rot *= 0.82;
-        r.kick *= 0.8;
-        setRecoil({ rot: r.rot, kick: r.kick });
-        raf = requestAnimationFrame(tick);
-      } else if (r.rot !== 0 || r.kick !== 0) {
-        r.rot = 0;
-        r.kick = 0;
-        setRecoil({ rot: 0, kick: 0 });
-      }
-    };
-    if (Math.abs(recoilRef.current.rot) > 0.15) {
+    let raf;
+    let last = 0;
+    const tick = (time) => {
+      if (!last) last = time;
+      const dt = Math.min(32, time - last) / 16.67;
+      last = time;
+
+      // torque leve pela velocidade vertical (queda acelera o giro, subida também)
+      const vy = velocityRef.current;
+      spinRef.current += vy * 0.08 * dt;
+
+      // atrito: no ar quase não para; “chão” freia mais
+      const onFloor =
+        typeof window !== "undefined" &&
+        drawYRef.current >= window.innerHeight - 100;
+      const friction = onFloor ? 0.88 : 0.995;
+      spinRef.current *= Math.pow(friction, dt);
+
+      // kick vertical decai
+      kickRef.current *= Math.pow(0.85, dt);
+
+      angleRef.current += spinRef.current * 0.55 * dt;
+      // mantém ângulo legível (pode dar voltas)
+      if (angleRef.current > 720) angleRef.current -= 720;
+      if (angleRef.current < -720) angleRef.current += 720;
+
+      setBodyAngle(angleRef.current);
+      setKickY(kickRef.current);
+
       raf = requestAnimationFrame(tick);
-    }
+    };
+    raf = requestAnimationFrame(tick);
     return () => {
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [recoil.rot, deathType]);
+  }, [deathType]);
 
-  // quanto mais ferido, mais "mole" em pé
-  const hurtLean = Math.min(18, wounds.length * 2.2);
-  const velTilt = Math.max(-10, Math.min(10, velocityY * 0.45));
-  const tilt = velTilt + recoil.rot + (recoil.rot >= 0 ? hurtLean * 0.3 : -hurtLean * 0.3);
+  // feridas empurram o spin base (corpo mole)
+  const hurtSpin = wounds.length * 3;
+  const tilt = bodyAngle + (spinRef.current >= 0 ? hurtSpin * 0.15 : -hurtSpin * 0.15);
   const isDying = deathType !== "none";
+
 
   if (isDying && ragdollPose) {
     const p = ragdollPose;
@@ -700,7 +723,7 @@ function Player({
     <div
       className={styles.player}
       style={{
-        top: `${drawY - recoil.kick}px`,
+        top: `${drawY - kickY}px`,
         transform: `rotate(${tilt}deg)`,
       }}
     >
