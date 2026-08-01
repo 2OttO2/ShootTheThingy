@@ -60,6 +60,7 @@ function App() {
   const [shotTick, setShotTick] = useState(0);
   const [deathType, setDeathType] = useState("none"); // none | spike_side | spike_hang | spike_impale | stall
   const [deathSpike, setDeathSpike] = useState(null); // { tipX, tipY, side }
+  const [deathObstacles, setDeathObstacles] = useState([]); // hitboxes na morte
   const [velocityY, setVelocityY] = useState(0);
 
   // debug
@@ -158,6 +159,7 @@ function App() {
     }
     setDeathType("none");
     setDeathSpike(null);
+    setDeathObstacles([]);
     setShotTick(0);
     setVelocityY(0);
     bloodRef.current?.clear();
@@ -185,6 +187,7 @@ function App() {
     }
     setDeathType("none");
     setDeathSpike(null);
+    setDeathObstacles([]);
     setShotTick(0);
     setVelocityY(0);
     bloodRef.current?.clear();
@@ -290,6 +293,7 @@ function App() {
         });
         setDeathType(stallEvent.type);
         setDeathSpike(null);
+    setDeathObstacles([]);
         setGameState(GAME_STATE.DYING);
         if (deathDelayTimeout.current) {
           clearTimeout(deathDelayTimeout.current);
@@ -364,6 +368,7 @@ function App() {
         offsetX: event.offsetX,
         impact: event.impact,
       });
+      setDeathObstacles([...topBoxes, ...bottomBoxes]);
       setDeathType(event.type);
       setGameState(GAME_STATE.DYING);
 
@@ -548,6 +553,7 @@ function App() {
             shotTick={shotTick}
             deathType={deathType}
             deathSpike={deathSpike}
+            deathObstacles={deathObstacles}
             velocityY={velocityY}
             moveSpeed={displaySpeed}
             bloodRef={bloodRef}
@@ -580,4 +586,5 @@ function App() {
 }
 
 export default App;
+
 

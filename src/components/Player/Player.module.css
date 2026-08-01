@@ -565,3 +565,19 @@
   z-index: 3;
 }
 
+/* ===== ragdoll sprite segments ===== */
+.rdSeg {
+  position: absolute;
+  height: 0;
+  pointer-events: none;
+  transform-origin: 0 50%;
+}
+
+.rdSegInner {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  line-height: 0;
+}
+

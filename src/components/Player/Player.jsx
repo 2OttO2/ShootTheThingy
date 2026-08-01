@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import styles from "./Player.module.css";
+import RagdollSprites from "./RagdollSprites.jsx";
 import {
   createRagdoll,
   stepRagdoll,
@@ -176,6 +177,7 @@ function Player({
   shotTick = 0,
   deathType = "none",
   deathSpike = null,
+  deathObstacles = [],
   velocityY = 0,
   moveSpeed = 0,
   playerX = 300,
@@ -379,6 +381,7 @@ function Player({
       spikeSide: deathSpike?.side ?? "bottom",
       offsetX: deathSpike?.offsetX ?? 0,
       impact: deathSpike?.impact ?? 1,
+      obstacles: deathObstacles ?? [],
     });
     ragdollRef.current = rd;
     setRagdollPose(ragdollSnapshot(rd));
@@ -415,7 +418,7 @@ function Player({
         ragdollRaf.current = null;
       }
     };
-  }, [deathType, playerX, deathSpike]);
+  }, [deathType, playerX, deathSpike, deathObstacles]);
 
   useEffect(() => {
     if (deathType === "none" && shotTick === 0) {
@@ -636,59 +639,9 @@ function Player({
     const p = ragdollPose;
     return (
       <>
-        <div className={styles.ragdollLayer}>
-          {/* pernas atrás */}
-          {!p.severed?.legLeft && (
-            <>
-              <Limb a={p.hip} b={p.lKnee} className={styles.rdLeg} thickness={10} maxLen={22} />
-              <Limb a={p.lKnee} b={p.lFoot} className={styles.rdLeg} thickness={9} maxLen={22} />
-            </>
-          )}
-          {!p.severed?.legRight && (
-            <>
-              <Limb a={p.hip} b={p.rKnee} className={styles.rdLeg} thickness={10} maxLen={22} />
-              <Limb a={p.rKnee} b={p.rFoot} className={styles.rdLeg} thickness={9} maxLen={22} />
-            </>
-          )}
+        <RagdollSprites pose={p} />
 
-          {/* braços */}
-          {!p.severed?.armLeft && (
-            <Limb a={p.lShoulder} b={p.lHand} className={styles.rdArm} thickness={8} maxLen={24} />
-          )}
-          {!p.severed?.armRight && (
-            <Limb a={p.rShoulder} b={p.rHand} className={styles.rdArm} thickness={8} maxLen={24} />
-          )}
-
-          {/* tronco goofy (bloco, não fio) */}
-          <TorsoBlock chest={p.chest} hip={p.hip} />
-          <Limb a={p.head} b={p.chest} className={styles.rdNeck} thickness={6} maxLen={20} />
-
-          {/* cabeça */}
-          <div
-            className={styles.rdHead}
-            style={{ left: p.head.x - 15, top: p.head.y - 15 }}
-          >
-            <div className={styles.rdEye} />
-            <div className={`${styles.rdEye} ${styles.rdEyeRight}`} />
-            <div className={styles.rdMouth} />
-          </div>
-
-          {!p.severed?.armLeft && (
-            <div className={styles.rdHand} style={{ left: p.lHand.x - 6, top: p.lHand.y - 6 }} />
-          )}
-          {!p.severed?.armRight && (
-            <div className={styles.rdHand} style={{ left: p.rHand.x - 6, top: p.rHand.y - 6 }} />
-          )}
-          {!p.severed?.legLeft && (
-            <div className={styles.rdFoot} style={{ left: p.lFoot.x - 7, top: p.lFoot.y - 4 }} />
-          )}
-          {!p.severed?.legRight && (
-            <div className={styles.rdFoot} style={{ left: p.rFoot.x - 7, top: p.rFoot.y - 4 }} />
-          )}
-        </div>
-
-
-      {detachedLimbs.map((piece) => (
+            {detachedLimbs.map((piece) => (
         <div
           key={piece.id}
           className={

@@ -1,6 +1,5 @@
 /**
- * Controlador de ragdoll — API estável pro Player.
- * Sem scroll artificial: o corpo morre no lugar (spikes já congelam no App).
+ * Controlador de ragdoll + colisão com spikes.
  */
 import { DeathType } from "../death/types.js";
 import { applyDeathBehavior, floorKick } from "../death/behaviors.js";
@@ -14,6 +13,7 @@ import {
   angleBetween,
   dist,
 } from "./verlet.js";
+import { collidePointsWithSpikes } from "./worldCollision.js";
 
 export function createRagdoll(x, y, opts = {}) {
   const floorY =
@@ -54,6 +54,8 @@ export function createRagdoll(x, y, opts = {}) {
     spikeTipX: meta.spikeTipX,
     spikeTipY: meta.spikeTipY,
     sideSpin: meta.sideSpin,
+    // hitboxes congeladas no momento da morte
+    obstacles: opts.obstacles ?? [],
   };
 }
 
@@ -62,7 +64,6 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
 
   const dtSec = dtNorm * (16.67 / 1000);
 
-  // HANG: cabeça fixa na ponta → solta → cai
   if (ragdoll.deathType === DeathType.HANG) {
     if (!ragdoll.hangReleased) {
       ragdoll.hangTimer -= dtSec;
@@ -74,14 +75,12 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
         impulse(ragdoll.parts.head, s * 0.5, 1.6);
         impulse(ragdoll.parts.chest, s * 0.8, 2.2);
         impulse(ragdoll.parts.hip, s * 1.2, 2.8);
-        // braços abrem no soltar
         if (!ragdoll.severed.armLeft) impulse(ragdoll.parts.lHand, -2, 1.5);
         if (!ragdoll.severed.armRight) impulse(ragdoll.parts.rHand, 2, 1.5);
       }
     }
   }
 
-  // IMPALE: peito fixo na ponta
   if (ragdoll.deathType === DeathType.IMPALE) {
     const c = ragdoll.parts.chest;
     const hip = ragdoll.parts.hip;
@@ -101,7 +100,6 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
     hip.oy = hip.y;
   }
 
-  // IMPALE_LEG: pé/hip fixo
   if (ragdoll.deathType === DeathType.IMPALE_LEG) {
     for (const p of ragdoll.points) {
       if (p.pinned) {
@@ -111,10 +109,13 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
     }
   }
 
-  // física (sem scroll)
   stepBody(ragdoll, dtNorm, { scroll: 0 });
 
-  // kick no chão (não em impale)
+  // colisão real com spikes (corpo quica / é empurrado pra fora)
+  if (ragdoll.obstacles?.length) {
+    collidePointsWithSpikes(ragdoll.points, ragdoll.obstacles);
+  }
+
   if (
     !ragdoll.floorKicked &&
     ragdoll.deathType !== DeathType.IMPALE &&
