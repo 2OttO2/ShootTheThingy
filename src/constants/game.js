@@ -10,7 +10,7 @@ export const SPIKE_SPEED = 4;
 
 export const PLAYER_SIZE = 40;
 
-export const GRAVITY = 0.3;
+export const GRAVITY = 0.42;
 export const JUMP_FORCE = -15; // fallback
 export const BOUNCE = 0.8; // retenção da velocidade vertical no bounce
 export const BOUNCE_SPEED_LOSS = 0.02; // % da speed horizontal perdida no bounce
@@ -78,3 +78,4 @@ export const WEAPONS = {
     scoreMultiplier: 5.0,
   },
 };
+;

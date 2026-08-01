@@ -1,8 +1,8 @@
 /**
- * Ragdoll com Planck.js (Box2D).
- * API compatível: createRagdoll / stepRagdoll / ragdollSnapshot / angleBetween / dist
- *
- * Unidades = pixels (Y pra baixo). Gravity positiva em Y.
+ * Ragdoll Planck (Box2D) — mortes claras:
+ * hang: corpo montado sob a ponta → balança → solta → cai
+ * impale: peito soldado na ponta, membros flailam
+ * impale_leg / bounce / spin / flop
  */
 import {
   World,
@@ -10,22 +10,33 @@ import {
   Box,
   Circle,
   Edge,
+  Polygon,
   RevoluteJoint,
   WeldJoint,
+  Settings,
 } from "planck-js";
 import { DeathType } from "../death/types.js";
 
-const GRAVITY = 55;
-const TIME_STEP = 1 / 60;
-const VEL_ITERS = 8;
-const POS_ITERS = 3;
+// Planck/Box2D limita deslocamento por step (~2px default) → queda em "slow-mo"
+// em coordenadas de pixel. Aumenta o teto.
+Settings.maxTranslation = 25;
+Settings.maxTranslationSquared = 25 * 25;
+Settings.maxRotation = 0.8 * Math.PI;
+Settings.maxRotationSquared = (0.8 * Math.PI) ** 2;
 
-function jointAt(world, a, b, ax, ay, limits = null) {
+const GRAVITY = 980;
+const VEL_ITERS = 10;
+const POS_ITERS = 4;
+
+/** groupIndex -1: membros não se empurram */
+const NO_SELF = { groupIndex: -1 };
+
+function rev(world, a, b, localA, localB, limits) {
   const def = {
     bodyA: a,
     bodyB: b,
-    localAnchorA: a.getLocalPoint(Vec2(ax, ay)),
-    localAnchorB: b.getLocalPoint(Vec2(ax, ay)),
+    localAnchorA: localA,
+    localAnchorB: localB,
     collideConnected: false,
   };
   if (limits) {
@@ -36,44 +47,74 @@ function jointAt(world, a, b, ax, ay, limits = null) {
   return world.createJoint(RevoluteJoint(def));
 }
 
-function makeBox(world, x, y, hx, hy, density, opts = {}) {
+function box(world, x, y, hx, hy, density, extra = {}) {
   const body = world.createBody({
     type: "dynamic",
     position: Vec2(x, y),
-    angle: 0,
-    linearDamping: opts.linearDamping ?? 0.15,
-    angularDamping: opts.angularDamping ?? 0.4,
-    fixedRotation: !!opts.fixedRotation,
+    linearDamping: 0.05,
+    angularDamping: 0.25,
+    ...extra,
   });
   body.createFixture({
     shape: Box(hx, hy),
     density,
-    friction: opts.friction ?? 0.45,
-    restitution: opts.restitution ?? 0.15,
-    filter: opts.filter ?? { groupIndex: -1 }, // membros não colidem entre si
+    friction: 0.5,
+    restitution: 0.12,
+    filter: NO_SELF,
   });
   return body;
 }
 
-function makeCircle(world, x, y, r, density, opts = {}) {
+function circle(world, x, y, r, density) {
   const body = world.createBody({
     type: "dynamic",
     position: Vec2(x, y),
-    linearDamping: opts.linearDamping ?? 0.15,
-    angularDamping: opts.angularDamping ?? 0.5,
+    linearDamping: 0.05,
+    angularDamping: 0.3,
   });
   body.createFixture({
     shape: Circle(r),
     density,
-    friction: opts.friction ?? 0.4,
-    restitution: opts.restitution ?? 0.1,
-    filter: opts.filter ?? { groupIndex: -1 },
+    friction: 0.4,
+    restitution: 0.1,
+    filter: NO_SELF,
   });
   return body;
 }
 
+function impulse(body, ix, iy) {
+  if (!body) return;
+  body.applyLinearImpulse(Vec2(ix, iy), body.getWorldCenter(), true);
+}
+
 /**
- * Cria mundo + esqueleto + aplica morte.
+ * Spikes congelados na morte → polígonos estáticos no mundo Planck.
+ * Sem isso o corpo atravessa os spikes depois de morto.
+ */
+function addSpikeObstacles(world, obstacles) {
+  if (!obstacles?.length) return 0;
+  let n = 0;
+  for (const hb of obstacles) {
+    if (!hb?.points || hb.points.length < 3) continue;
+    const verts = hb.points.map((p) => Vec2(p.x, p.y));
+    try {
+      const body = world.createBody({ type: "static" });
+      body.createFixture({
+        shape: Polygon(verts),
+        friction: 0.35,
+        restitution: 0.05,
+        // category padrão — colide com ragdoll (groupIndex -1)
+      });
+      n++;
+    } catch (e) {
+      // polígono inválido (vértices colineares etc.) — ignora
+    }
+  }
+  return n;
+}
+
+/**
+ * Monta o esqueleto já na pose da morte (não na pose "em pé longe do spike").
  */
 export function createRagdoll(x, y, opts = {}) {
   const floorY =
@@ -86,9 +127,9 @@ export function createRagdoll(x, y, opts = {}) {
   const tipY = opts.spikeTipY ?? opts.event?.tip?.y ?? y + 40;
   const spikeSide = opts.spikeSide ?? opts.event?.side ?? "bottom";
   const offsetX = opts.offsetX ?? opts.event?.offsetX ?? 0;
-  const impact = Math.max(0.85, Math.min(1.8, opts.impact ?? opts.event?.impact ?? 1));
+  const impact = Math.max(0.9, Math.min(1.8, opts.impact ?? opts.event?.impact ?? 1));
   const velocityY = opts.velocityY ?? opts.event?.velocityY ?? 0;
-  const sideSpin = offsetX >= 0 ? 1 : -1;
+  const side = offsetX >= 0 ? 1 : -1;
 
   const sev = {
     legLeft: !!opts.severed?.legLeft,
@@ -99,29 +140,57 @@ export function createRagdoll(x, y, opts = {}) {
 
   const world = World(Vec2(0, GRAVITY));
 
-  // chão + teto estáticos
+  // mundo estático
   const ground = world.createBody();
-  ground.createFixture(Edge(Vec2(-2000, floorY), Vec2(4000, floorY)));
-  const ceiling = world.createBody();
-  ceiling.createFixture(Edge(Vec2(-2000, ceilingY), Vec2(4000, ceilingY)));
+  ground.createFixture(Edge(Vec2(-4000, floorY), Vec2(4000, floorY)));
+  const ceil = world.createBody();
+  ceil.createFixture(Edge(Vec2(-4000, ceilingY), Vec2(4000, ceilingY)));
+  const maxX = typeof window !== "undefined" ? window.innerWidth - 16 : 900;
+  world.createBody().createFixture(Edge(Vec2(16, -200), Vec2(16, floorY + 50)));
+  world.createBody().createFixture(Edge(Vec2(maxX, -200), Vec2(maxX, floorY + 50)));
 
-  // paredes leves
-  const wallL = world.createBody();
-  wallL.createFixture(Edge(Vec2(20, -500), Vec2(20, floorY + 100)));
-  const wallR = world.createBody();
-  const maxX = typeof window !== "undefined" ? window.innerWidth - 20 : 800;
-  wallR.createFixture(Edge(Vec2(maxX, -500), Vec2(maxX, floorY + 100)));
+  // spikes ainda "existem" na morte
+  addSpikeObstacles(world, opts.obstacles ?? []);
 
-  const cx = x + 24;
-  const top = y;
+  // --- pose inicial por tipo de morte ---
+  // âncora visual: hang/impale usam o tip; demais usam posição do player
+  let hx = x + 24;
+  let hy = y + 12; // head center default
 
-  // --- corpos (centros) ---
-  const head = makeCircle(world, cx, top + 12, 13, 0.9);
-  const chest = makeBox(world, cx, top + 30, 11, 10, 1.6);
-  const hip = makeBox(world, cx, top + 50, 10, 8, 1.4);
+  if (deathType === DeathType.HANG) {
+    // cabeça na ponta, corpo pendurado pra baixo
+    hx = tipX;
+    hy = tipY;
+  } else if (deathType === DeathType.IMPALE) {
+    hx = tipX;
+    hy =
+      spikeSide === "bottom"
+        ? tipY + 14 - 18 // head above chest
+        : Math.max(30, tipY - 14) - 18;
+  } else if (deathType === DeathType.IMPALE_LEG) {
+    hx = tipX;
+    hy = tipY - 50;
+  }
 
-  const lShoulder = makeBox(world, cx - 14, top + 28, 5, 5, 0.5);
-  const rShoulder = makeBox(world, cx + 14, top + 28, 5, 5, 0.5);
+  const headR = 13;
+  const chestHX = 11;
+  const chestHY = 11;
+  const hipHX = 10;
+  const hipHY = 8;
+
+  const head = circle(world, hx, hy, headR, 1.0);
+  const chest = box(world, hx + side * 1, hy + headR + chestHY, chestHX, chestHY, 2.0);
+  const hip = box(
+    world,
+    hx + side * 2,
+    hy + headR + chestHY * 2 + hipHY + 2,
+    hipHX,
+    hipHY,
+    1.8
+  );
+
+  const lShoulder = box(world, hx - 14, hy + headR + 4, 5, 5, 0.55);
+  const rShoulder = box(world, hx + 14, hy + headR + 4, 5, 5, 0.55);
 
   let lHand = null;
   let rHand = null;
@@ -131,115 +200,137 @@ export function createRagdoll(x, y, opts = {}) {
   let rFoot = null;
 
   if (!sev.armLeft) {
-    lHand = makeBox(world, cx - 20, top + 48, 4, 9, 0.35);
+    lHand = box(world, hx - 22, hy + headR + 22, 4, 10, 0.4);
   }
   if (!sev.armRight) {
-    rHand = makeBox(world, cx + 20, top + 48, 4, 9, 0.35);
+    rHand = box(world, hx + 22, hy + headR + 22, 4, 10, 0.4);
   }
   if (!sev.legLeft) {
-    lKnee = makeBox(world, cx - 9, top + 64, 5, 8, 0.5);
-    lFoot = makeBox(world, cx - 10, top + 80, 5, 7, 0.4);
+    lKnee = box(world, hx - 10, hip.getPosition().y + 16, 5, 9, 0.55);
+    lFoot = box(world, hx - 11, hip.getPosition().y + 34, 5, 8, 0.45);
   }
   if (!sev.legRight) {
-    rKnee = makeBox(world, cx + 9, top + 64, 5, 8, 0.5);
-    rFoot = makeBox(world, cx + 10, top + 80, 5, 7, 0.4);
+    rKnee = box(world, hx + 10, hip.getPosition().y + 16, 5, 9, 0.55);
+    rFoot = box(world, hx + 11, hip.getPosition().y + 34, 5, 8, 0.45);
   }
 
-  // --- joints (limites de ângulo = feeling HW) ---
-  jointAt(world, head, chest, cx, top + 20, [-0.7, 0.7]);
-  jointAt(world, chest, hip, cx, top + 40, [-0.4, 0.4]);
-  jointAt(world, chest, lShoulder, cx - 10, top + 28, [-1.2, 1.2]);
-  jointAt(world, chest, rShoulder, cx + 10, top + 28, [-1.2, 1.2]);
+  // joints com âncoras LOCAIS (estáveis)
+  rev(world, head, chest, Vec2(0, headR - 1), Vec2(0, -chestHY), [-0.8, 0.8]);
+  rev(world, chest, hip, Vec2(0, chestHY - 1), Vec2(0, -hipHY), [-0.5, 0.5]);
+  rev(world, chest, lShoulder, Vec2(-chestHX + 2, -2), Vec2(4, 0), [-1.4, 1.4]);
+  rev(world, chest, rShoulder, Vec2(chestHX - 2, -2), Vec2(-4, 0), [-1.4, 1.4]);
 
-  if (lHand) jointAt(world, lShoulder, lHand, cx - 16, top + 38, [-2.2, 0.5]);
-  if (rHand) jointAt(world, rShoulder, rHand, cx + 16, top + 38, [-0.5, 2.2]);
+  if (lHand) {
+    rev(world, lShoulder, lHand, Vec2(0, 4), Vec2(0, -9), [-2.4, 0.6]);
+  }
+  if (rHand) {
+    rev(world, rShoulder, rHand, Vec2(0, 4), Vec2(0, -9), [-0.6, 2.4]);
+  }
   if (lKnee) {
-    jointAt(world, hip, lKnee, cx - 8, top + 56, [-0.2, 2.0]);
-    jointAt(world, lKnee, lFoot, cx - 9, top + 72, [-0.1, 2.2]);
+    rev(world, hip, lKnee, Vec2(-6, hipHY - 1), Vec2(0, -8), [-0.15, 2.1]);
+    rev(world, lKnee, lFoot, Vec2(0, 8), Vec2(0, -7), [-0.1, 2.3]);
   }
   if (rKnee) {
-    jointAt(world, hip, rKnee, cx + 8, top + 56, [-2.0, 0.2]);
-    jointAt(world, rKnee, rFoot, cx + 9, top + 72, [-2.2, 0.1]);
+    rev(world, hip, rKnee, Vec2(6, hipHY - 1), Vec2(0, -8), [-2.1, 0.15]);
+    rev(world, rKnee, rFoot, Vec2(0, 8), Vec2(0, -7), [-2.3, 0.1]);
   }
 
-  // impulso base da queda
-  const fall = Math.max(0.5, Math.min(8, Math.abs(velocityY) * 0.35 + 2));
-  const bodies = [head, chest, hip, lShoulder, rShoulder];
-  if (lHand) bodies.push(lHand);
-  if (rHand) bodies.push(rHand);
-  if (lKnee) bodies.push(lKnee, lFoot);
-  if (rKnee) bodies.push(rKnee, rFoot);
-
-  for (const b of bodies) {
-    b.setLinearVelocity(Vec2(sideSpin * 0.5 * impact, fall * 0.4));
-  }
-
-  // âncora estática pro pin (hang / impale)
   let pinJoint = null;
   let pinBody = null;
   let hangTimer = 0;
   let hangReleased = true;
 
+  // --- comportamentos de morte ---
   if (deathType === DeathType.HANG) {
-    pinBody = world.createBody({ type: "static", position: Vec2(tipX, tipY) });
+    // pin na cabeça (revolute na ponta do spike de cima)
+    pinBody = world.createBody({
+      type: "static",
+      position: Vec2(tipX, tipY),
+    });
     pinJoint = world.createJoint(
-      RevoluteJoint(
-        {
-          collideConnected: false,
-          enableLimit: false,
-        },
-        pinBody,
-        head,
-        Vec2(tipX, tipY)
-      )
+      RevoluteJoint({
+        bodyA: pinBody,
+        bodyB: head,
+        localAnchorA: Vec2(0, 0),
+        localAnchorB: Vec2(0, -headR + 2),
+        collideConnected: false,
+      })
     );
-    hangTimer = 1.1;
+    hangTimer = 1.2;
     hangReleased = false;
-    hip.applyLinearImpulse(Vec2(sideSpin * 120 * impact, 40), hip.getWorldCenter(), true);
-    if (lFoot) lFoot.applyLinearImpulse(Vec2(-sideSpin * 40, 30), lFoot.getWorldCenter(), true);
-    if (rFoot) rFoot.applyLinearImpulse(Vec2(sideSpin * 40, 30), rFoot.getWorldCenter(), true);
+    // balanço inicial (pêndulo)
+    impulse(hip, side * 180 * impact, 20);
+    impulse(chest, side * 80 * impact, 10);
+    if (lFoot) impulse(lFoot, -side * 60, 40);
+    if (rFoot) impulse(rFoot, side * 60, 40);
+    if (lHand) impulse(lHand, -side * 40, 30);
+    if (rHand) impulse(rHand, side * 40, 30);
   } else if (deathType === DeathType.IMPALE) {
-    const cy = spikeSide === "bottom" ? tipY + 14 : Math.max(28, tipY - 14);
-    pinBody = world.createBody({ type: "static", position: Vec2(tipX, cy) });
+    const cy =
+      spikeSide === "bottom" ? tipY + 16 : Math.max(30, tipY - 14);
+    // reposiciona peito no tip e solda
+    chest.setTransform(Vec2(tipX, cy), 0);
+    head.setTransform(Vec2(tipX, cy - headR - chestHY), 0);
+    hip.setTransform(Vec2(tipX + side * 3, cy + chestHY + hipHY), 0);
+    pinBody = world.createBody({
+      type: "static",
+      position: Vec2(tipX, cy),
+    });
     pinJoint = world.createJoint(
-      WeldJoint(
-        {
-          collideConnected: false,
-          frequencyHz: 0,
-          dampingRatio: 0,
-        },
-        pinBody,
-        chest,
-        Vec2(tipX, cy)
-      )
+      WeldJoint({
+        bodyA: pinBody,
+        bodyB: chest,
+        localAnchorA: Vec2(0, 0),
+        localAnchorB: Vec2(0, 0),
+        collideConnected: false,
+        frequencyHz: 0,
+        dampingRatio: 0,
+      })
     );
-    if (lFoot) lFoot.applyLinearImpulse(Vec2(-80 * impact, 50), lFoot.getWorldCenter(), true);
-    if (rFoot) rFoot.applyLinearImpulse(Vec2(80 * impact, 50), rFoot.getWorldCenter(), true);
-    if (lHand) lHand.applyLinearImpulse(Vec2(-60 * impact, 20), lHand.getWorldCenter(), true);
-    if (rHand) rHand.applyLinearImpulse(Vec2(60 * impact, 20), rHand.getWorldCenter(), true);
+    impulse(head, -side * 50 * impact, -10);
+    if (lFoot) impulse(lFoot, -100 * impact, 60);
+    if (rFoot) impulse(rFoot, 100 * impact, 60);
+    if (lHand) impulse(lHand, -90 * impact, 40);
+    if (rHand) impulse(rHand, 90 * impact, 40);
   } else if (deathType === DeathType.IMPALE_LEG) {
     const foot = lFoot || rFoot || hip;
-    pinBody = world.createBody({ type: "static", position: Vec2(tipX, tipY) });
+    const fy = tipY + (spikeSide === "bottom" ? 4 : 0);
+    foot.setTransform(Vec2(tipX, fy), 0);
+    pinBody = world.createBody({
+      type: "static",
+      position: Vec2(tipX, fy),
+    });
     pinJoint = world.createJoint(
-      RevoluteJoint({ collideConnected: false }, pinBody, foot, Vec2(tipX, tipY))
+      RevoluteJoint({
+        bodyA: pinBody,
+        bodyB: foot,
+        localAnchorA: Vec2(0, 0),
+        localAnchorB: Vec2(0, 0),
+        collideConnected: false,
+      })
     );
-    head.applyLinearImpulse(Vec2(sideSpin * 100 * impact, 40), head.getWorldCenter(), true);
-    chest.applyLinearImpulse(Vec2(sideSpin * 80 * impact, 50), chest.getWorldCenter(), true);
+    impulse(head, side * 150 * impact, 50);
+    impulse(chest, side * 120 * impact, 70);
+    impulse(hip, side * 40 * impact, 20);
   } else if (deathType === DeathType.BOUNCE) {
     const away = spikeSide === "top" ? 1 : -1;
-    chest.applyLinearImpulse(
-      Vec2(sideSpin * 90 * impact, away * 140 * impact),
-      chest.getWorldCenter(),
-      true
-    );
+    impulse(chest, side * 100 * impact, away * 160 * impact);
+    impulse(head, side * 80 * impact, away * 120 * impact);
+    impulse(hip, side * 60 * impact, away * 100 * impact);
   } else if (deathType === DeathType.SPIN) {
-    head.applyLinearImpulse(Vec2(sideSpin * 140 * impact, fall * 5), head.getWorldCenter(), true);
-    hip.applyLinearImpulse(Vec2(-sideSpin * 100 * impact, fall * 5), hip.getWorldCenter(), true);
+    impulse(head, side * 160 * impact, 40);
+    impulse(hip, -side * 140 * impact, 50);
+    if (lFoot) impulse(lFoot, -side * 80, 30);
+    if (rFoot) impulse(rFoot, side * 80, 30);
   } else {
-    // flop / stall
-    hip.applyLinearImpulse(Vec2(sideSpin * 30, fall * 8), hip.getWorldCenter(), true);
-    if (lFoot) lFoot.applyLinearImpulse(Vec2(50, -20), lFoot.getWorldCenter(), true);
-    if (rFoot) rFoot.applyLinearImpulse(Vec2(-55, -20), rFoot.getWorldCenter(), true);
+    // flop / stall — cai mole no lugar
+    const fall = Math.max(4, Math.min(18, Math.abs(velocityY) * 0.5 + 6));
+    impulse(chest, side * 25, fall * 14);
+    impulse(hip, -side * 20, fall * 18);
+    if (lFoot) impulse(lFoot, 55, -15);
+    if (rFoot) impulse(rFoot, -60, -15);
+    if (lHand) impulse(lHand, -40, 25);
+    if (rHand) impulse(rHand, 40, 25);
   }
 
   return {
@@ -248,10 +339,9 @@ export function createRagdoll(x, y, opts = {}) {
     alive: true,
     deathType,
     spikeSide,
-    sideSpin,
+    sideSpin: side,
     hangTimer,
     hangReleased,
-    floorKicked: false,
     floorY,
     pinJoint,
     pinBody,
@@ -271,29 +361,26 @@ export function createRagdoll(x, y, opts = {}) {
       lFoot,
       rFoot,
     },
-    // compat: stepBody antigo olhava points — snapshot monta a partir dos bodies
-    parts: null,
   };
 }
 
-function bodyPos(body) {
+function pos(body) {
   if (!body) return { x: 0, y: 0 };
   const p = body.getPosition();
   return { x: p.x, y: p.y };
 }
 
 export function stepRagdoll(ragdoll, dtNorm = 1) {
-  if (!ragdoll || !ragdoll.alive || !ragdoll.world) return;
+  if (!ragdoll?.alive || !ragdoll.world) return;
 
-  const dtSec = Math.min(0.033, (dtNorm * 16.67) / 1000);
-  // substeps se frame longo
+  const dtSec = Math.min(0.032, (dtNorm * 16.67) / 1000);
   const steps = dtSec > 0.02 ? 2 : 1;
   const h = dtSec / steps;
   for (let i = 0; i < steps; i++) {
     ragdoll.world.step(h, VEL_ITERS, POS_ITERS);
   }
 
-  // hang: solta depois do timer
+  // HANG: pendura → solta → cai (sem virar impale)
   if (ragdoll.deathType === DeathType.HANG && !ragdoll.hangReleased) {
     ragdoll.hangTimer -= dtSec;
     if (ragdoll.hangTimer <= 0) {
@@ -302,10 +389,16 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
         ragdoll.world.destroyJoint(ragdoll.pinJoint);
         ragdoll.pinJoint = null;
       }
-      const { head, chest, hip } = ragdoll.bodies;
-      head.applyLinearImpulse(Vec2(ragdoll.sideSpin * 20, 80), head.getWorldCenter(), true);
-      chest.applyLinearImpulse(Vec2(ragdoll.sideSpin * 30, 100), chest.getWorldCenter(), true);
-      hip.applyLinearImpulse(Vec2(ragdoll.sideSpin * 40, 120), hip.getWorldCenter(), true);
+      const s = ragdoll.sideSpin || 1;
+      const { head, chest, hip, lHand, rHand, lFoot, rFoot } = ragdoll.bodies;
+      // queda rápida ao soltar (não "slow-mo")
+      impulse(head, s * 20, 120);
+      impulse(chest, s * 35, 220);
+      impulse(hip, s * 45, 280);
+      impulse(lHand, -50, 80);
+      impulse(rHand, 50, 80);
+      impulse(lFoot, -30, 100);
+      impulse(rFoot, 30, 100);
     }
   }
 }
@@ -314,31 +407,23 @@ export function ragdollSnapshot(ragdoll) {
   if (!ragdoll?.bodies) return null;
   const b = ragdoll.bodies;
   const sev = ragdoll.severed;
-
-  const head = bodyPos(b.head);
-  const chest = bodyPos(b.chest);
-  const hip = bodyPos(b.hip);
-  const lShoulder = bodyPos(b.lShoulder);
-  const rShoulder = bodyPos(b.rShoulder);
-  const lHand = b.lHand ? bodyPos(b.lHand) : { x: lShoulder.x, y: lShoulder.y + 16 };
-  const rHand = b.rHand ? bodyPos(b.rHand) : { x: rShoulder.x, y: rShoulder.y + 16 };
-  const lKnee = b.lKnee ? bodyPos(b.lKnee) : { x: hip.x - 8, y: hip.y + 14 };
-  const rKnee = b.rKnee ? bodyPos(b.rKnee) : { x: hip.x + 8, y: hip.y + 14 };
-  const lFoot = b.lFoot ? bodyPos(b.lFoot) : { x: lKnee.x, y: lKnee.y + 14 };
-  const rFoot = b.rFoot ? bodyPos(b.rFoot) : { x: rKnee.x, y: rKnee.y + 14 };
-
+  const head = pos(b.head);
+  const chest = pos(b.chest);
+  const hip = pos(b.hip);
+  const lShoulder = pos(b.lShoulder);
+  const rShoulder = pos(b.rShoulder);
   return {
     head,
     chest,
     hip,
     lShoulder,
     rShoulder,
-    lHand,
-    rHand,
-    lKnee,
-    rKnee,
-    lFoot,
-    rFoot,
+    lHand: b.lHand ? pos(b.lHand) : { x: lShoulder.x, y: lShoulder.y + 16 },
+    rHand: b.rHand ? pos(b.rHand) : { x: rShoulder.x, y: rShoulder.y + 16 },
+    lKnee: b.lKnee ? pos(b.lKnee) : { x: hip.x - 8, y: hip.y + 14 },
+    rKnee: b.rKnee ? pos(b.rKnee) : { x: hip.x + 8, y: hip.y + 14 },
+    lFoot: b.lFoot ? pos(b.lFoot) : { x: hip.x - 10, y: hip.y + 28 },
+    rFoot: b.rFoot ? pos(b.rFoot) : { x: hip.x + 10, y: hip.y + 28 },
     severed: { ...sev },
     deathType: ragdoll.deathType,
   };
