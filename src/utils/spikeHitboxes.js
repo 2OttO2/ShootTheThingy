@@ -21,7 +21,7 @@ export function createSpikeHitboxes(spike, side) {
   const baseInset = 4;
 
   for (let i = 0; i < spike.amount; i++) {
-    const x = spike.x + i * size;
+    const x = spike.x + i * size - 9;
     const y = startY;
 
     let points;
