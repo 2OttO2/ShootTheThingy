@@ -336,9 +336,11 @@ function Player({
     lastTick.current = shotTick;
     applyShot();
     // kickback do corpo (pra cima/trás), não balanço L-R
+    // reação forte ao tiro — não fica "em pé estático"
+    const dir = Math.random() > 0.5 ? 1 : -1;
     const kick = {
-      rot: -8 - Math.random() * 6, // inclina pra trás
-      kick: 6 + Math.random() * 4,  // sobe um pouco
+      rot: dir * (14 + Math.random() * 12), // tomba pro lado
+      kick: 10 + Math.random() * 8,         // sobe / treme
     };
     recoilRef.current = kick;
     setRecoil(kick);
@@ -382,6 +384,16 @@ function Player({
       offsetX: deathSpike?.offsetX ?? 0,
       impact: deathSpike?.impact ?? 1,
       obstacles: deathObstacles ?? [],
+      onBlood: ({ x, y, count = 8, power = 1 }) => {
+        bloodRef?.current?.burst({
+          x,
+          y,
+          count,
+          power,
+          velocityY: 2,
+          moveSpeed: 0,
+        });
+      },
     });
     ragdollRef.current = rd;
     setRagdollPose(ragdollSnapshot(rd));
@@ -631,8 +643,10 @@ function Player({
     };
   }, [recoil.rot, deathType]);
 
-  const velTilt = Math.max(-6, Math.min(6, velocityY * 0.35));
-  const tilt = velTilt + recoil.rot;
+  // quanto mais ferido, mais "mole" em pé
+  const hurtLean = Math.min(18, wounds.length * 2.2);
+  const velTilt = Math.max(-10, Math.min(10, velocityY * 0.45));
+  const tilt = velTilt + recoil.rot + (recoil.rot >= 0 ? hurtLean * 0.3 : -hurtLean * 0.3);
   const isDying = deathType !== "none";
 
   if (isDying && ragdollPose) {
