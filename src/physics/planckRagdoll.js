@@ -85,8 +85,9 @@ function impulse(body, ix, iy) {
 }
 
 /**
- * Só cria fixtures de spike PERTO do ragdoll (spatial hash).
- * Evita dezenas de polígonos estáticos inúteis no world Planck.
+ * Spikes no world Planck via spatial hash.
+ * Inclui faixa vertical INTEIRA perto do X do player (teto + chão),
+ * senão morte no topo não colide com spike de baixo.
  */
 function addSpikeObstacles(world, obstacles, focusX = 320, focusY = 300) {
   if (!obstacles?.length) return [];
@@ -107,8 +108,17 @@ function addSpikeObstacles(world, obstacles, focusX = 320, focusY = 300) {
     hash.insert({ minX, minY, maxX, maxY, ref: hb });
   }
 
-  // raio generoso em torno do ponto de morte
-  const near = hash.queryRadius(focusX, focusY, 280);
+  const viewH =
+    typeof window !== "undefined" ? window.innerHeight : 800;
+  // coluna larga em X, altura de tela inteira (+ margem)
+  const halfW = 220;
+  const near = hash.queryAabb(
+    focusX - halfW,
+    -80,
+    focusX + halfW,
+    viewH + 80
+  );
+
   const spikeBodies = [];
   const seen = new Set();
   for (const item of near) {
@@ -119,8 +129,8 @@ function addSpikeObstacles(world, obstacles, focusX = 320, focusY = 300) {
       const body = world.createBody({ type: "static" });
       body.createFixture({
         shape: Polygon(hb.points.map((p) => Vec2(p.x, p.y))),
-        friction: 0.4,
-        restitution: 0.05,
+        friction: 0.55,
+        restitution: 0.12,
       });
       body.setUserData({
         kind: "spike",
@@ -165,41 +175,84 @@ function setupContacts(ragdoll) {
       });
     }
 
-    // impacto forte na ponta → impale secundário (solda peito/hip/head)
-    if (
+    // contato com spike APÓS a morte (ex: caiu do teto no de baixo)
+    // — reage mesmo sem ser "impale primário"
+    const canSecondary =
       !ragdoll.secondaryImpale &&
       ragdoll.hangReleased !== false &&
-      speed > 120 &&
-      (part.name === "chest" || part.name === "hip" || part.name === "head")
-    ) {
+      speed > 55;
+
+    if (canSecondary) {
       const tip = spike.tip || p;
-      try {
-        if (ragdoll.pinJoint) {
-          world.destroyJoint(ragdoll.pinJoint);
-          ragdoll.pinJoint = null;
-        }
-        partBody.setTransform(Vec2(tip.x, tip.y + (spike.side === "bottom" ? 12 : -8)), partBody.getAngle());
-        const pin = world.createBody({
-          type: "static",
-          position: Vec2(tip.x, tip.y + (spike.side === "bottom" ? 12 : -8)),
-        });
-        ragdoll.pinJoint = world.createJoint(
-          WeldJoint({
-            bodyA: pin,
-            bodyB: partBody,
-            localAnchorA: Vec2(0, 0),
-            localAnchorB: Vec2(0, 0),
-            collideConnected: false,
-            frequencyHz: 0,
-            dampingRatio: 0,
-          })
-        );
-        ragdoll.secondaryImpale = true;
-        ragdoll.deathType = DeathType.IMPALE;
-        if (typeof ragdoll.onBlood === "function") {
-          ragdoll.onBlood({ x: tip.x, y: tip.y, count: 16, power: 1.6 });
-        }
-      } catch (_) {}
+      const isTorso =
+        part.name === "chest" ||
+        part.name === "hip" ||
+        part.name === "head";
+      const isLeg =
+        part.name === "lFoot" ||
+        part.name === "rFoot" ||
+        part.name === "lKnee" ||
+        part.name === "rKnee";
+
+      // impulso de reação sempre (bateu no spike)
+      const nx = p.x - (tip.x || p.x);
+      const push = nx >= 0 ? 1 : -1;
+      partBody.applyLinearImpulse(
+        Vec2(push * 40 + 30, spike.side === "bottom" ? -80 : 60),
+        partBody.getWorldCenter(),
+        true
+      );
+
+      // engate secundário se bateu com força no tronco/perna
+      if (speed > 70 && (isTorso || isLeg)) {
+        try {
+          if (ragdoll.pinJoint) {
+            world.destroyJoint(ragdoll.pinJoint);
+            ragdoll.pinJoint = null;
+          }
+          const pinY =
+            tip.y + (spike.side === "bottom" ? 10 : -8);
+          // NÃO teleporta o corpo inteiro — mola curta até a ponta
+          const pin = world.createBody({
+            type: "static",
+            position: Vec2(tip.x, pinY),
+          });
+          const ap = partBody.getPosition();
+          const len = Math.max(
+            6,
+            Math.min(24, Math.hypot(ap.x - tip.x, ap.y - pinY))
+          );
+          ragdoll.pinJoint = world.createJoint(
+            DistanceJoint({
+              bodyA: pin,
+              bodyB: partBody,
+              localAnchorA: Vec2(0, 0),
+              localAnchorB: Vec2(0, 0),
+              length: len,
+              frequencyHz: 6,
+              dampingRatio: 0.7,
+              collideConnected: false,
+            })
+          );
+          ragdoll.pinBody = pin;
+          ragdoll.attachBody = partBody;
+          ragdoll.breakForce = 220 + speed;
+          ragdoll.hangReleased = false;
+          ragdoll.hangTimer = 0;
+          ragdoll.secondaryImpale = true;
+          ragdoll.deathType = isLeg
+            ? DeathType.IMPALE_LEG
+            : DeathType.IMPALE;
+          if (typeof ragdoll.onBlood === "function") {
+            ragdoll.onBlood({
+              x: tip.x,
+              y: tip.y,
+              count: 14,
+              power: 1.5,
+            });
+          }
+        } catch (_) {}
+      }
     }
   });
 }
