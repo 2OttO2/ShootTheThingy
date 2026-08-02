@@ -1,13 +1,13 @@
 import { DeathType, createDeathEvent } from "./types.js";
 
 /**
- * Classificação estável e previsível.
+ * Classificação com colisão lateral:
  *
+ * face left/right → SPIN (corpo rimba no flanco)
  * top  + tip  → hang
  * top  + base → bounce
- * bottom + tip → impale (torso) / impale_leg (pernas)
+ * bottom + tip → impale / impale_leg
  * bottom + base → flop
- * stall → stall
  */
 export function classifyDeath(hitTop, hitBottom, ctx = {}) {
   const velocityY = ctx.velocityY ?? 0;
@@ -23,12 +23,16 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
     });
   }
 
-  // prioriza spike de baixo se os dois no mesmo frame
   const hit = hitBottom || hitTop;
   const region = hit.region || "tip";
+  const face = hit.face || region;
   const part = hit.bodyPart || "torso";
   const absVy = Math.abs(velocityY);
-  const impact = Math.max(0.8, Math.min(1.8, 0.8 + absVy / 16));
+  const lateral = hit.lateral ?? 0;
+  const impact = Math.max(
+    0.85,
+    Math.min(2.0, 0.85 + absVy / 16 + lateral * 0.45)
+  );
   const tip = hit.tip || {
     x: playerX + (ctx.playerW ?? 36) / 2,
     y: playerY,
@@ -36,10 +40,12 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
 
   let type = DeathType.FLOP;
 
-  if (hit.side === "top") {
+  // colisão lateral tem prioridade — não empala de frente se bateu no flanco
+  if (face === "left" || face === "right") {
+    type = DeathType.SPIN;
+  } else if (hit.side === "top") {
     type = region === "base" ? DeathType.BOUNCE : DeathType.HANG;
   } else {
-    // bottom
     if (region === "base") {
       type = DeathType.FLOP;
     } else if (part === "legs") {
@@ -49,13 +55,18 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
     }
   }
 
+  // offsetX: lateral forçado pro sentido do flanco
+  let offsetX = hit.offsetX || 0;
+  if (face === "left") offsetX = Math.min(offsetX, -12);
+  if (face === "right") offsetX = Math.max(offsetX, 12);
+
   return createDeathEvent({
     type,
     side: hit.side,
     tip,
     bodyPart: part,
-    region,
-    offsetX: hit.offsetX || 0,
+    region: face === "left" || face === "right" ? "tip" : region,
+    offsetX,
     impact,
     playerX,
     playerY,

@@ -365,6 +365,8 @@ function App() {
         bodyPart: event.bodyPart,
         offsetX: event.offsetX,
         impact: event.impact,
+        face: hitTop?.face || hitBottom?.face || null,
+        lateral: hitTop?.lateral || hitBottom?.lateral || 0,
       });
       setDeathObstacles([...topBoxes, ...bottomBoxes]);
       setDeathType(event.type);

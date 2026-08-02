@@ -1,5 +1,6 @@
 /**
- * Colisão jogador (AABB) × spike (triângulo).
+ * Colisão jogador (AABB) × spike (triângulo)
+ * + detecção de face: tip | base | left | right (colisão lateral)
  */
 
 const EPS = 0.5;
@@ -127,7 +128,68 @@ function contactRegion(player, hb) {
   return "base";
 }
 
-/** Parte do corpo mais próxima da ponta: head | torso | legs */
+/**
+ * Face do contato:
+ *  - tip  : em cima/embaixo da ponta
+ *  - base : base larga do spike
+ *  - left / right : colisão lateral (flanco do triângulo)
+ */
+function contactFace(player, hb, region, offsetX) {
+  if (!hb?.tip || !hb.points) return region === "base" ? "base" : "tip";
+
+  const tip = hb.tip;
+  const size = hb.size || 64;
+  const cx = player.x + player.width * 0.5;
+  const cy = player.y + player.height * 0.5;
+
+  // pontos de base (não-tip)
+  const basePts = hb.points.filter(
+    (p) => Math.hypot(p.x - tip.x, p.y - tip.y) > 2
+  );
+  if (basePts.length < 2) {
+    if (Math.abs(offsetX) > size * 0.22) return offsetX > 0 ? "right" : "left";
+    return region === "base" ? "base" : "tip";
+  }
+
+  // profundidade horizontal: quão longe do eixo da ponta
+  const lateral = Math.abs(offsetX);
+  const lateralThresh = size * 0.2;
+
+  // amostra pontos do player dentro/perto do triângulo no lado
+  const samples = samplePlayerPoints(player);
+  let leftHits = 0;
+  let rightHits = 0;
+  let tipHits = 0;
+  for (const p of samples) {
+    if (!pointInTriangle(p, hb.points)) continue;
+    const dx = p.x - tip.x;
+    const dy = p.y - tip.y;
+    // perto da ponta verticalmente
+    const along =
+      hb.side === "bottom"
+        ? p.y - tip.y // >=0 abaixo da ponta
+        : tip.y - p.y;
+    if (along < size * 0.35 && Math.abs(dx) < size * 0.18) {
+      tipHits++;
+    } else if (dx < -2) leftHits++;
+    else if (dx > 2) rightHits++;
+  }
+
+  // prioriza flanco se maioria dos pontos de contato está de lado
+  const sideHits = leftHits + rightHits;
+  if (sideHits >= tipHits && sideHits > 0 && lateral > lateralThresh * 0.6) {
+    return leftHits >= rightHits ? "left" : "right";
+  }
+
+  // offset forte mesmo sem amostras claras = lateral
+  if (lateral > lateralThresh * 1.15 && region !== "base") {
+    return offsetX > 0 ? "right" : "left";
+  }
+
+  if (region === "base") return "base";
+  return "tip";
+}
+
 function contactBodyPart(player, hb) {
   if (!hb?.tip) return "torso";
   const tip = hb.tip;
@@ -142,6 +204,13 @@ function contactBodyPart(player, hb) {
   return "torso";
 }
 
+/** Intensidade lateral 0..1 (quanto do impacto veio do lado) */
+function lateralIntensity(player, hb, offsetX, face) {
+  if (face !== "left" && face !== "right") return 0;
+  const size = hb.size || 64;
+  return Math.max(0.35, Math.min(1, Math.abs(offsetX) / (size * 0.45)));
+}
+
 export function findSpikeCollision(player, hitboxes) {
   for (let i = 0; i < hitboxes.length; i++) {
     const hb = hitboxes[i];
@@ -149,16 +218,24 @@ export function findSpikeCollision(player, hitboxes) {
       const tip = hb.tip ?? null;
       const cx = player.x + player.width * 0.5;
       const offsetX = tip ? cx - tip.x : 0;
+      const region = contactRegion(player, hb);
+      const face = contactFace(player, hb, region, offsetX);
+      const bodyPart = contactBodyPart(player, hb);
+      const lateral = lateralIntensity(player, hb, offsetX, face);
+
       return {
         side: hb.side ?? "unknown",
         index: hb.index ?? i,
         hitbox: hb,
         tip,
-        region: contactRegion(player, hb),
-        bodyPart: contactBodyPart(player, hb),
-        offsetX, // <0 bateu lado esquerdo da ponta
+        region,
+        face, // tip | base | left | right
+        bodyPart,
+        offsetX,
+        lateral, // 0..1
       };
     }
   }
   return null;
 }
+
