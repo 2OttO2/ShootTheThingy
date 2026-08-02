@@ -595,10 +595,8 @@ function Player({
     };
   }, [detachedLimbs.length, bloodRef]);
 
-  // ---- sangramento contínuo (sem pausa) via rAF ----
+  // ---- sangramento contínuo — vivo E morto (feridas pré-morte seguem no ragdoll) ----
   useEffect(() => {
-    if (deathType !== "none") return;
-
     const hasWounds = wounds.length > 0;
     const L = limbsRef.current;
     const hasStump =
@@ -618,9 +616,66 @@ function Player({
     const isArterialPart = (part) =>
       part === "heart" || part === "forehead" || part === "groin";
 
+    /** Posição mundial da ferida: sprite vivo ou joint do ragdoll */
+    const woundWorldPos = (w) => {
+      const dying = deathType !== "none" && ragdollRef.current;
+      if (!dying) {
+        return {
+          x: playerX + (w.left / 100) * 48,
+          y: drawYRef.current + (w.top / 100) * 64,
+        };
+      }
+      const pose = ragdollSnapshot(ragdollRef.current);
+      if (!pose) {
+        return {
+          x: playerX + (w.left / 100) * 48,
+          y: drawYRef.current + (w.top / 100) * 64,
+        };
+      }
+      const map = {
+        legLeft: pose.lKnee,
+        legRight: pose.rKnee,
+        armLeft: pose.lHand,
+        armRight: pose.rHand,
+        forehead: pose.head,
+        head: pose.head,
+        heart: pose.chest,
+        torso: pose.chest,
+        groin: pose.hip,
+      };
+      const pt = map[w.part] || pose.chest;
+      // micro-offset pelo local relativo da ferida no membro
+      const jx = ((w.left - 50) / 50) * 4;
+      const jy = ((w.top - 50) / 50) * 4;
+      return { x: pt.x + jx, y: pt.y + jy };
+    };
+
+    const stumpWorldPos = (id) => {
+      const dying = deathType !== "none" && ragdollRef.current;
+      if (!dying) {
+        const pos = STUMP_POS[id];
+        return {
+          x: playerX + (pos.left / 100) * 48,
+          y: drawYRef.current + (pos.top / 100) * 64,
+        };
+      }
+      const pose = ragdollSnapshot(ragdollRef.current);
+      if (!pose) {
+        const pos = STUMP_POS[id];
+        return {
+          x: playerX + (pos.left / 100) * 48,
+          y: drawYRef.current + (pos.top / 100) * 64,
+        };
+      }
+      // coto ≈ encaixe no tronco
+      if (id === "legLeft" || id === "legRight") return { x: pose.hip.x, y: pose.hip.y };
+      if (id === "armLeft") return { x: pose.lShoulder.x, y: pose.lShoulder.y };
+      if (id === "armRight") return { x: pose.rShoulder.x, y: pose.rShoulder.y };
+      return { x: pose.chest.x, y: pose.chest.y };
+    };
+
     let raf = null;
     let last = 0;
-    // acumuladores em ms — emitem sempre que passam o limiar (stream contínuo)
     let venousAcc = 0;
     let arterialAcc = 0;
     let stumpAcc = 0;
@@ -635,54 +690,55 @@ function Player({
       stumpAcc += dt;
 
       const list = woundsRef.current;
-      const vy = velocityRef.current;
-      const ms = moveSpeedRef.current;
+      // na morte o corpo "cai" — vy positivo leve pro sangue cair
+      const vy =
+        deathType !== "none" ? 4 + Math.random() * 3 : velocityRef.current;
+      const ms = deathType !== "none" ? 0 : moveSpeedRef.current;
 
-      // venous: stream contínuo, 1 fonte por tick (leve)
       if (venousAcc >= 70 && list.length) {
         venousAcc = 0;
         const w = list[Math.floor(Math.random() * list.length)];
         if (w) {
+          const pos = woundWorldPos(w);
           bloodRef?.current?.drip({
-            x: playerX + (w.left / 100) * 48,
-            y: drawYRef.current + (w.top / 100) * 64,
+            x: pos.x,
+            y: pos.y,
             velocityY: vy,
             moveSpeed: ms,
-            power: isArterialPart(w.part) ? 0.95 : 0.75,
-            count: 2,
+            power: isArterialPart(w.part) ? 1.0 : 0.8,
+            count: deathType !== "none" ? 3 : 2,
           });
         }
       }
 
-      // arterial: 1 vital por tick, ritmo alto mas barato
       const arterials = list.filter((w) => isArterialPart(w.part));
       if (arterialAcc >= 80 && arterials.length) {
         arterialAcc = 0;
         const w = arterials[Math.floor(Math.random() * arterials.length)];
         const power =
-          w.part === "heart" ? 1.25 : w.part === "forehead" ? 1.1 : 1.0;
+          w.part === "heart" ? 1.3 : w.part === "forehead" ? 1.15 : 1.05;
+        const pos = woundWorldPos(w);
         bloodRef?.current?.arterial({
-          x: playerX + (w.left / 100) * 48,
-          y: drawYRef.current + (w.top / 100) * 64,
+          x: pos.x,
+          y: pos.y,
           velocityY: vy,
           moveSpeed: ms,
-          power,
-          count: 3,
+          power: deathType !== "none" ? power * 1.1 : power,
+          count: deathType !== "none" ? 4 : 3,
         });
       }
 
-      // stump: 1 coto por tick
       const severed = LIMB_ORDER.filter((id) => limbsRef.current[id].severed);
       if (stumpAcc >= 75 && severed.length) {
         stumpAcc = 0;
         const id = severed[Math.floor(Math.random() * severed.length)];
-        const pos = STUMP_POS[id];
+        const pos = stumpWorldPos(id);
         bloodRef?.current?.stump({
-          x: playerX + (pos.left / 100) * 48,
-          y: drawYRef.current + (pos.top / 100) * 64,
+          x: pos.x,
+          y: pos.y,
           velocityY: vy,
           moveSpeed: ms,
-          power: 1.1,
+          power: 1.15,
           count: 3,
         });
       }
