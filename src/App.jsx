@@ -222,8 +222,6 @@ function App() {
   // GAME LOOP
   // =====================
   const gameLoop = (time) => {
-    if (isDeadRef.current) return;
-
     if (lastTime.current === 0) {
       lastTime.current = time;
     }
@@ -232,8 +230,10 @@ function App() {
     lastTime.current = time;
     const dt = deltaTime / 16.67;
 
-    // momentum / speed — decai até zero; sem piso mínimo
-    momentum.current -= MOMENTUM_DECAY * dt;
+    // momentum / speed — decai até zero (também durante DYING)
+    // na morte decai um pouco mais rápido, mas NÃO zera de imediato
+    const decayMul = isDeadRef.current ? 1.8 : 1;
+    momentum.current -= MOMENTUM_DECAY * decayMul * dt;
     if (momentum.current < 0) {
       momentum.current = 0;
     }
@@ -243,8 +243,16 @@ function App() {
     setDistance(Math.floor(distanceRef.current));
     setDisplaySpeed(gameSpeed.current);
 
-    // spikes
-    updateSpikes(dt, gameSpeed.current);
+    // VIVO: spikes rolam. MORTO: spikes CONGELAM (senão o pin/corpo vai pro canto esquerdo)
+    if (!isDeadRef.current) {
+      updateSpikes(dt, gameSpeed.current);
+    }
+
+    // durante DYING: HUD/speed decai, mas cenário não arrasta o cadáver
+    if (isDeadRef.current) {
+      animationRef.current = requestAnimationFrame(gameLoop);
+      return;
+    }
 
     const hitboxes = [
       ...createSpikeHitboxes(spikesRef.current.top, "top"),
@@ -344,9 +352,8 @@ function App() {
 
     if (hitTop || hitBottom) {
       isDeadRef.current = true;
-      momentum.current = 0;
-      gameSpeed.current = 0;
-      setDisplaySpeed(0);
+      // NÃO zera momentum — mapa desacelera junto com a speed residual
+      setDisplaySpeed(gameSpeed.current);
 
       // Classificação única em death/classify.js
       const event = classifyDeath(hitTop, hitBottom, {

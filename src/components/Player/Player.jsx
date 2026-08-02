@@ -536,6 +536,8 @@ function Player({
       spikeSide: deathSpike?.side ?? "bottom",
       offsetX: deathSpike?.offsetX ?? 0,
       impact: deathSpike?.impact ?? 1,
+      bodyPart: deathSpike?.bodyPart ?? "torso",
+      region: deathSpike?.region ?? "tip",
       obstacles: deathObstacles ?? [],
       onBlood: ({ x, y, count = 8, power = 1 }) => {
         bloodRef?.current?.burst({

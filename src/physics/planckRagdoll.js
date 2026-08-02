@@ -11,6 +11,7 @@ import {
   Polygon,
   RevoluteJoint,
   WeldJoint,
+  DistanceJoint,
   Settings,
 } from "planck-js";
 import { DeathType } from "../death/types.js";
@@ -214,18 +215,9 @@ export function createRagdoll(x, y, opts = {}) {
 
   addSpikeObstacles(world, opts.obstacles ?? []);
 
+  // SEMPRE spawna onde o player morreu — zero teleporte pra ponta
   let hx = x + 24;
   let hy = y + 12;
-  if (deathType === DeathType.HANG) {
-    hx = tipX;
-    hy = tipY;
-  } else if (deathType === DeathType.IMPALE) {
-    hx = tipX;
-    hy = spikeSide === "bottom" ? tipY + 14 - 18 : Math.max(30, tipY - 14) - 18;
-  } else if (deathType === DeathType.IMPALE_LEG) {
-    hx = tipX;
-    hy = tipY - 50;
-  }
 
   const headR = 13;
   const chestHX = 11;
@@ -310,95 +302,108 @@ export function createRagdoll(x, y, opts = {}) {
   let pinBody = null;
   let hangTimer = 0;
   let hangReleased = true;
+  let attachBody = null;
+  let breakForce = 0;
 
-  if (deathType === DeathType.HANG) {
-    pinBody = world.createBody({ type: "static", position: Vec2(tipX, tipY) });
-    pinJoint = world.createJoint(
-      RevoluteJoint({
-        bodyA: pinBody,
-        bodyB: head,
-        localAnchorA: Vec2(0, 0),
-        localAnchorB: Vec2(0, -headR + 2),
-        collideConnected: false,
-      })
-    );
-    hangTimer = 1.15;
-    hangReleased = false;
-    impulse(hip, side * 180 * impact, 20);
-    impulse(chest, side * 80 * impact, 10);
-    if (lFoot) impulse(lFoot, -side * 60, 40);
-    if (rFoot) impulse(rFoot, side * 60, 40);
-  } else if (deathType === DeathType.IMPALE) {
-    const cy = spikeSide === "bottom" ? tipY + 16 : Math.max(30, tipY - 14);
-    chest.setTransform(Vec2(tipX, cy), 0);
-    head.setTransform(Vec2(tipX, cy - headR - chestHY), 0);
-    hip.setTransform(Vec2(tipX + side * 3, cy + chestHY + hipHY), 0);
-    pinBody = world.createBody({ type: "static", position: Vec2(tipX, cy) });
-    pinJoint = world.createJoint(
-      WeldJoint({
-        bodyA: pinBody,
-        bodyB: chest,
-        localAnchorA: Vec2(0, 0),
-        localAnchorB: Vec2(0, 0),
-        collideConnected: false,
-        frequencyHz: 0,
-        dampingRatio: 0,
-      })
-    );
-    if (lFoot) impulse(lFoot, -100 * impact, 60);
-    if (rFoot) impulse(rFoot, 100 * impact, 60);
-    if (lHand) impulse(lHand, -90 * impact, 40);
-    if (rHand) impulse(rHand, 90 * impact, 40);
-  } else if (deathType === DeathType.IMPALE_LEG) {
-    const foot = lFoot || rFoot || hip;
-    const fy = tipY + (spikeSide === "bottom" ? 4 : 0);
-    foot.setTransform(Vec2(tipX, fy), 0);
-    pinBody = world.createBody({ type: "static", position: Vec2(tipX, fy) });
-    pinJoint = world.createJoint(
-      RevoluteJoint({
-        bodyA: pinBody,
-        bodyB: foot,
-        localAnchorA: Vec2(0, 0),
-        localAnchorB: Vec2(0, 0),
-        collideConnected: false,
-      })
-    );
-    impulse(head, side * 150 * impact, 50);
-    impulse(chest, side * 120 * impact, 70);
-  } else if (deathType === DeathType.BOUNCE) {
-    const away = spikeSide === "top" ? 1 : -1;
-    impulse(chest, side * 100 * impact, away * 160 * impact);
-    impulse(head, side * 80 * impact, away * 120 * impact);
-    impulse(hip, side * 60 * impact, away * 100 * impact);
-  } else if (deathType === DeathType.SPIN) {
-    impulse(head, side * 160 * impact, 40);
-    impulse(hip, -side * 140 * impact, 50);
-  } else {
-    const fall = Math.max(4, Math.min(18, Math.abs(velocityY) * 0.5 + 6));
-    impulse(chest, side * 25, fall * 14);
-    impulse(hip, -side * 20, fall * 18);
-    if (lFoot) impulse(lFoot, 55, -15);
-    if (rFoot) impulse(rFoot, -60, -15);
+  /**
+   * Contato emergente: prende a PARTE atingida na ponta com mola quebrável.
+   * Momentum real → torque → solta quando a força estoura.
+   * Sem teleporte, sem animação fixa por DeathType.
+   */
+  const bodyPart = opts.bodyPart || opts.event?.bodyPart || "torso";
+  const region = opts.region || "tip";
+  const absVy = Math.abs(velocityY || 0);
+  const spd = Math.abs(opts.moveSpeed || 0);
+
+  function pickAttach(part) {
+    if (part === "head") return head;
+    if (part === "legs") {
+      if (offsetX < 0 && lFoot) return lFoot;
+      if (offsetX >= 0 && rFoot) return rFoot;
+      return lFoot || rFoot || hip;
+    }
+    if (part === "arms") {
+      if (offsetX < 0) return lHand || lShoulder;
+      return rHand || rShoulder;
+    }
+    // torso / default
+    return chest;
   }
 
+  // Só engata se houve ponta de spike (contato localizado)
+  const hasTip =
+    Number.isFinite(tipX) &&
+    Number.isFinite(tipY) &&
+    (deathType === DeathType.HANG ||
+      deathType === DeathType.IMPALE ||
+      deathType === DeathType.IMPALE_LEG ||
+      deathType === DeathType.SPIN ||
+      region === "tip");
 
-  // herda velocidade pré-morte (arcade → px/s)
+  if (hasTip && deathType !== DeathType.STALL && deathType !== DeathType.FLOP) {
+    attachBody = pickAttach(bodyPart);
+    // FLOP base = contato largo: sem pin, só física livre
+  }
+
+  // Base larga / stall: sem pin
+  if (deathType === DeathType.FLOP || deathType === DeathType.STALL) {
+    attachBody = null;
+  }
+
+  if (attachBody) {
+    pinBody = world.createBody({ type: "static", position: Vec2(tipX, tipY) });
+    const ap = attachBody.getPosition();
+    // comprimento = distância atual (zero snap)
+    let ropeLen = Math.hypot(ap.x - tipX, ap.y - tipY);
+    // contato na ponta: engate curto o bastante pra "prender", sem TP
+    if (region === "tip") {
+      ropeLen = Math.min(ropeLen, 18);
+      ropeLen = Math.max(6, ropeLen);
+    } else {
+      ropeLen = Math.max(10, Math.min(ropeLen, 36));
+    }
+
+    // quanto mais rápido, mais firme o engate — mas ainda quebrável
+    const firm = 2.5 + Math.min(5, absVy / 6 + spd / 4);
+    pinJoint = world.createJoint(
+      DistanceJoint({
+        bodyA: pinBody,
+        bodyB: attachBody,
+        localAnchorA: Vec2(0, 0),
+        localAnchorB: Vec2(0, 0),
+        length: ropeLen,
+        frequencyHz: firm,
+        dampingRatio: 0.45,
+        collideConnected: false,
+      })
+    );
+    hangReleased = false;
+    // força de ruptura ∝ velocidade: full speed estoura mais fácil após o torque
+    breakForce = 180 + absVy * 25 + spd * 18;
+    // leve impulso residual só no sentido do movimento (não script de animação)
+    // a rotação vem do torque do engate + vel herdada
+  }
+
+  // Velocidade herdada do arcade — a reação sai DAQUI, não de impulse por tipo
   {
-    const carryVy = (velocityY || 0) * 28;
-    const carryVx = -(opts.moveSpeed || 0) * 22;
-    const spin = (opts.spin || 0) * 0.85;
+    const carryVy = (velocityY || 0) * 30;
+    // mundo rola pra esquerda ⇒ personagem "voa" pra direita relativo
+    const carryVx = 35 + Math.abs(opts.moveSpeed || 0) * 16;
+    const spin = (opts.spin || 0) * 0.9;
     const allBodies = [
       head, chest, hip, lShoulder, rShoulder,
       lHand, rHand, lKnee, rKnee, lFoot, rFoot,
     ].filter(Boolean);
     for (const b of allBodies) {
       const cur = b.getLinearVelocity();
-      b.setLinearVelocity(Vec2(cur.x + carryVx, cur.y + carryVy));
+      const vx = Math.max(cur.x, 0) + carryVx;
+      b.setLinearVelocity(Vec2(vx, cur.y + carryVy));
       if (spin) b.setAngularVelocity(b.getAngularVelocity() + spin);
     }
   }
 
   const ragdoll = {
+
     engine: "planck",
     world,
     alive: true,
@@ -407,6 +412,8 @@ export function createRagdoll(x, y, opts = {}) {
     sideSpin: side,
     hangTimer,
     hangReleased,
+    breakForce,
+    attachBody,
     floorKicked: false,
     secondaryImpale: deathType === DeathType.IMPALE || deathType === DeathType.IMPALE_LEG,
     floorY,
@@ -449,15 +456,14 @@ function applyFloorKick(ragdoll) {
   if (hv.y < 80) return;
 
   ragdoll.floorKicked = true;
-  const s = ragdoll.sideSpin || 1;
-  // kick leve tipo objeto caindo de alto
-  impulse(hip, s * 40, -140);
-  impulse(chest, s * 25, -80);
-  impulse(head, s * 15, -50);
-  if (lFoot) impulse(lFoot, 90 * s, -60);
-  if (rFoot) impulse(rFoot, -95 * s, -65);
-  if (lHand) impulse(lHand, -30 * s, -20);
-  if (rHand) impulse(rHand, 30 * s, -20);
+  // kick pro alto e pra DIREITA
+  impulse(hip, 50, -140);
+  impulse(chest, 35, -80);
+  impulse(head, 20, -50);
+  if (lFoot) impulse(lFoot, 40, -60);
+  if (rFoot) impulse(rFoot, 55, -65);
+  if (lHand) impulse(lHand, 25, -20);
+  if (rHand) impulse(rHand, 40, -20);
 
   if (typeof ragdoll.onBlood === "function") {
     const p = hip.getPosition();
@@ -465,41 +471,65 @@ function applyFloorKick(ragdoll) {
   }
 }
 
-export function stepRagdoll(ragdoll, dtNorm = 1) {
+export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
   if (!ragdoll?.alive || !ragdoll.world) return;
 
   const dtSec = Math.min(0.032, (dtNorm * 16.67) / 1000);
+
+  // NÃO arrasta pin/corpos com o scroll — isso sugava o body pro canto esquerdo.
+  // Spikes congelam na morte (App); pin fica fixo na tela.
+
   const steps = dtSec > 0.02 ? 2 : 1;
   const h = dtSec / steps;
   for (let i = 0; i < steps; i++) {
     ragdoll.world.step(h, VEL_ITERS, POS_ITERS);
   }
 
-  if (ragdoll.deathType === DeathType.HANG && !ragdoll.hangReleased) {
-    ragdoll.hangTimer -= dtSec;
-    if (ragdoll.hangTimer <= 0) {
-      ragdoll.hangReleased = true;
-      if (ragdoll.pinJoint) {
-        ragdoll.world.destroyJoint(ragdoll.pinJoint);
-        ragdoll.pinJoint = null;
+  // ruptura emergente do engate (força da joint × velocidade)
+  if (ragdoll.pinJoint && !ragdoll.hangReleased) {
+    let mag = 0;
+    try {
+      const invDt = 1 / Math.max(dtSec, 1 / 120);
+      const rf = ragdoll.pinJoint.getReactionForce(invDt);
+      mag = Math.hypot(rf.x, rf.y);
+    } catch (_) {
+      // fallback: tensão pela distância
+      if (ragdoll.pinBody && ragdoll.attachBody) {
+        const a = ragdoll.pinBody.getPosition();
+        const b = ragdoll.attachBody.getPosition();
+        const d = Math.hypot(b.x - a.x, b.y - a.y);
+        const v = ragdoll.attachBody.getLinearVelocity();
+        mag = d * 40 + Math.hypot(v.x, v.y) * 8;
       }
-      const s = ragdoll.sideSpin || 1;
-      const { head, chest, hip, lHand, rHand, lFoot, rFoot } = ragdoll.bodies;
-      impulse(head, s * 20, 120);
-      impulse(chest, s * 35, 220);
-      impulse(hip, s * 45, 280);
-      impulse(lHand, -50, 80);
-      impulse(rHand, 50, 80);
-      impulse(lFoot, -30, 100);
-      impulse(rFoot, 30, 100);
+    }
+    // tempo mínimo minúsculo pra não soltar no mesmo frame do engate
+    ragdoll.hangTimer = (ragdoll.hangTimer || 0) + dtSec;
+    const minHold = 0.08;
+    const limit = ragdoll.breakForce || 400;
+    if (ragdoll.hangTimer > minHold && mag > limit) {
+      ragdoll.hangReleased = true;
+      try {
+        ragdoll.world.destroyJoint(ragdoll.pinJoint);
+      } catch (_) {}
+      ragdoll.pinJoint = null;
+      // sem impulso scriptado — o corpo já carrega vel/torque do engate
+    }
+    // segurança: se ficou preso demais, solta
+    if (ragdoll.hangTimer > 2.8 && ragdoll.pinJoint) {
+      ragdoll.hangReleased = true;
+      try {
+        ragdoll.world.destroyJoint(ragdoll.pinJoint);
+      } catch (_) {}
+      ragdoll.pinJoint = null;
     }
   }
 
-  // kick no chão
-  if (!ragdoll.floorKicked && !ragdoll.secondaryImpale) {
+  // chão: só física (restitution do fixture) — kick leve se impacto alto
+  if (!ragdoll.floorKicked) {
     const hip = ragdoll.bodies.hip;
     const py = hip.getPosition().y;
-    if (py >= ragdoll.floorY - 18) {
+    const vy = hip.getLinearVelocity().y;
+    if (py >= ragdoll.floorY - 18 && vy > 120) {
       applyFloorKick(ragdoll);
     }
   }
