@@ -1,8 +1,6 @@
 /**
- * Ragdoll vivo leve: tronco segue o player, membros balançam (Verlet mole).
- * Pose compatível com RagdollSprites.
+ * Ragdoll vivo: tronco segue player, membros balançam (menos gelatina).
  */
-
 function pt(x, y) {
   return { x, y, ox: x, oy: y };
 }
@@ -11,7 +9,7 @@ function dist(a, b) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-function stick(a, b, len, stiff = 0.35) {
+function stick(a, b, len, stiff = 0.5) {
   return { a, b, len: len ?? dist(a, b), stiff };
 }
 
@@ -62,23 +60,22 @@ export function createLivingRagdoll(x, y, severed = {}) {
   if (!sev.legLeft) points.push(lKnee, lFoot);
   if (!sev.legRight) points.push(rKnee, rFoot);
 
-  // sticks mais moles → menos "duro"
   const sticks = [
-    stick(head, chest, 17, 0.45),
-    stick(chest, hip, 20, 0.4),
-    stick(chest, lShoulder, 12, 0.35),
-    stick(chest, rShoulder, 12, 0.35),
-    stick(lShoulder, rShoulder, 24, 0.2),
+    stick(head, chest, 17, 0.72),
+    stick(chest, hip, 20, 0.68),
+    stick(chest, lShoulder, 12, 0.55),
+    stick(chest, rShoulder, 12, 0.55),
+    stick(lShoulder, rShoulder, 24, 0.35),
   ];
-  if (!sev.armLeft) sticks.push(stick(lShoulder, lHand, 20, 0.22));
-  if (!sev.armRight) sticks.push(stick(rShoulder, rHand, 20, 0.22));
+  if (!sev.armLeft) sticks.push(stick(lShoulder, lHand, 20, 0.4));
+  if (!sev.armRight) sticks.push(stick(rShoulder, rHand, 20, 0.4));
   if (!sev.legLeft) {
-    sticks.push(stick(hip, lKnee, 15, 0.28));
-    sticks.push(stick(lKnee, lFoot, 15, 0.22));
+    sticks.push(stick(hip, lKnee, 15, 0.48));
+    sticks.push(stick(lKnee, lFoot, 15, 0.42));
   }
   if (!sev.legRight) {
-    sticks.push(stick(hip, rKnee, 15, 0.28));
-    sticks.push(stick(rKnee, rFoot, 15, 0.22));
+    sticks.push(stick(hip, rKnee, 15, 0.48));
+    sticks.push(stick(rKnee, rFoot, 15, 0.42));
   }
 
   return {
@@ -117,8 +114,7 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
   const dt = Math.min(dtSec, 0.033);
   const { parts } = body;
 
-  // damping mais leve — mantém o giro do tiro
-  body.omega *= Math.pow(0.985, dt * 60);
+  body.omega *= Math.pow(0.978, dt * 60);
   body.angle += body.omega * dt;
 
   const cx = x + 24;
@@ -140,10 +136,8 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
     rFoot: [10, 52],
   };
 
-  // follow mais fraco = membros mais moles
-  const FOLLOW = 0.06;
-
-  function place(name, pin, follow = FOLLOW) {
+  // follow mais firme = menos gelatina
+  function place(name, pin, follow = 0.22) {
     const p = parts[name];
     if (!p) return;
     const [lx, ly] = local[name];
@@ -163,13 +157,12 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
   }
 
   place("chest", true);
-  // tronco acompanha o ângulo com follow médio
-  place("head", false, 0.12);
-  place("hip", false, 0.12);
-  place("lShoulder", false, 0.1);
-  place("rShoulder", false, 0.1);
+  place("head", false, 0.28);
+  place("hip", false, 0.28);
+  place("lShoulder", false, 0.26);
+  place("rShoulder", false, 0.26);
 
-  const fall = velocityY * 0.12 * dt * 60;
+  const fall = velocityY * 0.1 * dt * 60;
   for (const name of [
     "lHand",
     "rHand",
@@ -182,8 +175,8 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
   ]) {
     const p = parts[name];
     if (!p || p.pin) continue;
-    const vx = (p.x - p.ox) * 0.985;
-    const vy = (p.y - p.oy) * 0.985 + fall * 0.025 + 0.2 * dt * 60;
+    const vx = (p.x - p.ox) * 0.94;
+    const vy = (p.y - p.oy) * 0.94 + fall * 0.02 + 0.18 * dt * 60;
     p.ox = p.x;
     p.oy = p.y;
     p.x += vx;
@@ -197,10 +190,10 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
     if (body.severed.armRight && name === "rHand") continue;
     if (body.severed.legLeft && (name === "lKnee" || name === "lFoot")) continue;
     if (body.severed.legRight && (name === "rKnee" || name === "rFoot")) continue;
-    place(name, false, 0.05); // bem mole
+    place(name, false, 0.14);
   }
 
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     for (const s of body.sticks) {
       const sev = body.severed;
       if (sev.armLeft && (s.a === parts.lHand || s.b === parts.lHand)) continue;

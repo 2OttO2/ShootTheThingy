@@ -381,6 +381,23 @@ export function createRagdoll(x, y, opts = {}) {
     if (rFoot) impulse(rFoot, -60, -15);
   }
 
+
+  // herda velocidade pré-morte (arcade → px/s)
+  {
+    const carryVy = (velocityY || 0) * 28;
+    const carryVx = -(opts.moveSpeed || 0) * 22;
+    const spin = (opts.spin || 0) * 0.85;
+    const allBodies = [
+      head, chest, hip, lShoulder, rShoulder,
+      lHand, rHand, lKnee, rKnee, lFoot, rFoot,
+    ].filter(Boolean);
+    for (const b of allBodies) {
+      const cur = b.getLinearVelocity();
+      b.setLinearVelocity(Vec2(cur.x + carryVx, cur.y + carryVy));
+      if (spin) b.setAngularVelocity(b.getAngularVelocity() + spin);
+    }
+  }
+
   const ragdoll = {
     engine: "planck",
     world,

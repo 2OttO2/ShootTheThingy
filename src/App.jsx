@@ -453,10 +453,20 @@ function App() {
       }
 
       // atira — recoil arcade (impact da arma)
+      // impact é negativo (sobe). NÃO sobrescreve bounce: empilha se já estiver subindo.
       const recoil = selectedWeapon ? selectedWeapon.impact : JUMP_FORCE;
       const cooldown = selectedWeapon ? selectedWeapon.firerate : 2000;
 
-      speed.current = recoil;
+      if (speed.current < 0) {
+        // já subindo (ex: bounce) → ganha o impulso do tiro em cima
+        speed.current = speed.current + recoil;
+      } else {
+        // caindo / parado → tiro define a subida
+        speed.current = recoil;
+      }
+      // teto de subida pra não explodir o combo
+      if (speed.current < -48) speed.current = -48;
+
       jumpCooldown.current = cooldown;
       ammoRef.current -= 1;
       setAmmo(ammoRef.current);

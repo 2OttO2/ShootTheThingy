@@ -98,6 +98,64 @@ function jitter(spot, amount = 4) {
   };
 }
 
+
+/** Posição da marca no segmento do ragdoll (não só no joint da ponta). */
+function lerpPt(a, b, t) {
+  return {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+  };
+}
+
+function poseWoundPos(pose, w) {
+  if (!pose || !w) return null;
+  const part = w.part;
+  const top = w.top ?? 50;
+  const left = w.left ?? 50;
+
+  // braços: ombro → mão (top maior = mais perto da mão)
+  if (part === "armLeft") {
+    const t = Math.max(0.28, Math.min(0.82, (top - 30) / 40));
+    const p = lerpPt(pose.lShoulder, pose.lHand, t);
+    return { x: p.x - 4, y: p.y - 4 };
+  }
+  if (part === "armRight") {
+    const t = Math.max(0.28, Math.min(0.82, (top - 30) / 40));
+    const p = lerpPt(pose.rShoulder, pose.rHand, t);
+    return { x: p.x - 4, y: p.y - 4 };
+  }
+
+  // pernas: quadril → pé
+  if (part === "legLeft") {
+    const t = Math.max(0.35, Math.min(0.92, (top - 55) / 40));
+    const p = lerpPt(pose.hip, pose.lFoot, t);
+    return { x: p.x - 4, y: p.y - 4 };
+  }
+  if (part === "legRight") {
+    const t = Math.max(0.35, Math.min(0.92, (top - 55) / 40));
+    const p = lerpPt(pose.hip, pose.rFoot, t);
+    return { x: p.x - 4, y: p.y - 4 };
+  }
+
+  // cabeça / torso / vitais
+  if (part === "forehead" || part === "head") {
+    const jx = ((left - 50) / 50) * 5;
+    const jy = ((top - 12) / 20) * 4;
+    return { x: pose.head.x + jx - 4, y: pose.head.y + jy - 4 };
+  }
+  if (part === "heart" || part === "torso") {
+    const jx = ((left - 50) / 50) * 6;
+    const jy = ((top - 40) / 30) * 5;
+    return { x: pose.chest.x + jx - 4, y: pose.chest.y + jy - 4 };
+  }
+  if (part === "groin") {
+    return { x: pose.hip.x - 4, y: pose.hip.y - 2 };
+  }
+
+  return { x: pose.chest.x - 4, y: pose.chest.y - 4 };
+}
+
+
 function makeSprayBurst({ count, originLeft, originTop, velocityY, moveSpeed, deathMode }) {
   const particles = [];
   const vyBias = Math.max(-1, Math.min(1, velocityY / 12));
@@ -463,6 +521,8 @@ function Player({
     const rd = createRagdoll(playerX, drawYRef.current, {
       deathType,
       velocityY: velocityRef.current,
+      moveSpeed: moveSpeedRef.current,
+      spin: livingRef.current?.omega ?? 0,
       floorY,
       ceilingY,
       severed: {
@@ -638,54 +698,19 @@ function Player({
     const isArterialPart = (part) =>
       part === "heart" || part === "forehead" || part === "groin";
 
-    /** Posição mundial da ferida: sprite vivo ou joint do ragdoll */
     const woundWorldPos = (w) => {
-      const dying = deathType !== "none" && ragdollRef.current;
-      if (!dying) {
-        if (livingRef.current) {
-          const pose = livingSnapshot(livingRef.current);
-          const map = {
-            legLeft: pose.lKnee,
-            legRight: pose.rKnee,
-            armLeft: pose.lHand,
-            armRight: pose.rHand,
-            forehead: pose.head,
-            head: pose.head,
-            heart: pose.chest,
-            torso: pose.chest,
-            groin: pose.hip,
-          };
-          const pt = map[w.part] || pose.chest;
-          return { x: pt.x, y: pt.y };
-        }
-        return {
-          x: playerX + (w.left / 100) * 48,
-          y: drawYRef.current + (w.top / 100) * 64,
-        };
+      let pose = null;
+      if (deathType !== "none" && ragdollRef.current) {
+        pose = ragdollSnapshot(ragdollRef.current);
+      } else if (livingRef.current) {
+        pose = livingSnapshot(livingRef.current);
       }
-      const pose = ragdollSnapshot(ragdollRef.current);
-      if (!pose) {
-        return {
-          x: playerX + (w.left / 100) * 48,
-          y: drawYRef.current + (w.top / 100) * 64,
-        };
-      }
-      const map = {
-        legLeft: pose.lKnee,
-        legRight: pose.rKnee,
-        armLeft: pose.lHand,
-        armRight: pose.rHand,
-        forehead: pose.head,
-        head: pose.head,
-        heart: pose.chest,
-        torso: pose.chest,
-        groin: pose.hip,
+      const mapped = poseWoundPos(pose, w);
+      if (mapped) return mapped;
+      return {
+        x: playerX + (w.left / 100) * 48,
+        y: drawYRef.current + (w.top / 100) * 64,
       };
-      const pt = map[w.part] || pose.chest;
-      // micro-offset pelo local relativo da ferida no membro
-      const jx = ((w.left - 50) / 50) * 4;
-      const jy = ((w.top - 50) / 50) * 4;
-      return { x: pt.x + jx, y: pt.y + jy };
     };
 
     const stumpWorldPos = (id) => {
@@ -879,9 +904,34 @@ function Player({
 
   if (isDying && ragdollPose) {
     const p = ragdollPose;
+    const deathWoundMap = (w) => {
+      const mapped = poseWoundPos(p, w);
+      if (mapped) return mapped;
+      return { x: p.chest.x - 4, y: p.chest.y - 4 };
+    };
     return (
       <>
         <RagdollSprites pose={p} />
+
+        {wounds.map((w) => {
+          const pos = deathWoundMap(w);
+          return (
+            <div
+              key={w.id}
+              className={styles.wound}
+              style={{
+                position: "absolute",
+                left: pos.x,
+                top: pos.y,
+                width: 10,
+                height: 10,
+                zIndex: 40,
+              }}
+            >
+              <span className={styles.woundBall} />
+            </div>
+          );
+        })}
 
             {detachedLimbs.map((piece) => (
         <div
@@ -925,47 +975,58 @@ function Player({
 
   const livePose = livingPose;
 
+  const woundMap = (pose, w) => {
+    const mapped = poseWoundPos(pose, w);
+    if (mapped) return mapped;
+    return {
+      x: playerX + (w.left / 100) * 48,
+      y: drawY - kickY + (w.top / 100) * 64,
+    };
+  };
+
   return (
     <>
     {livePose && <RagdollSprites pose={livePose} />}
-    <div
-      className={styles.player}
-      style={{
-        top: `${drawY - kickY}px`,
-        opacity: 0,
-        pointerEvents: 'none',
-        transform: 'none',
-      }}
-    >
-      <div className={styles.body} />
-      {wounds.map((w) => (
+
+    {wounds.map((w) => {
+      const pos = woundMap(livePose, w);
+      return (
         <div
           key={w.id}
           className={styles.wound}
-          style={{ left: `${w.left}%`, top: `${w.top}%` }}
+          style={{
+            position: "absolute",
+            left: pos.x,
+            top: pos.y,
+            width: 10,
+            height: 10,
+            zIndex: 40,
+          }}
         >
           <span className={styles.woundBall} />
         </div>
-      ))}
+      );
+    })}
 
-      {bloodSpray.map((d) => (
-        <span
-          key={d.id}
-          className={styles.spray}
-          style={{
-            left: `${d.left}%`,
-            top: `${d.top}%`,
-            width: d.size,
-            height: d.height,
-            animationDuration: `${d.duration}s`,
-            animationDelay: `${d.delay}ms`,
-            ["--dx"]: `${d.dx}px`,
-            ["--dy"]: `${d.dy}px`,
-            ["--rot"]: `${d.rot}deg`,
-          }}
-        />
-      ))}
-    </div>
+    {bloodSpray.map((d) => (
+      <span
+        key={d.id}
+        className={styles.spray}
+        style={{
+          position: "absolute",
+          left: playerX + (d.left / 100) * 48,
+          top: drawY - kickY + (d.top / 100) * 64,
+          width: d.size,
+          height: d.height,
+          zIndex: 30,
+          animationDuration: `${d.duration}s`,
+          animationDelay: `${d.delay}ms`,
+          ["--dx"]: `${d.dx}px`,
+          ["--dy"]: `${d.dy}px`,
+          ["--rot"]: `${d.rot}deg`,
+        }}
+      />
+    ))}
 
       {/* membros isolados em coords de mundo */}
       {detachedLimbs.map((piece) => (
