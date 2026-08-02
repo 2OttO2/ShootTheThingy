@@ -11,7 +11,7 @@ function dist(a, b) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-function stick(a, b, len, stiff = 0.45) {
+function stick(a, b, len, stiff = 0.35) {
   return { a, b, len: len ?? dist(a, b), stiff };
 }
 
@@ -32,11 +32,6 @@ function constrain(s) {
   }
 }
 
-/**
- * @param {number} x player left
- * @param {number} y player top (drawY)
- * @param {object} severed
- */
 export function createLivingRagdoll(x, y, severed = {}) {
   const cx = x + 24;
   const top = y;
@@ -59,7 +54,7 @@ export function createLivingRagdoll(x, y, severed = {}) {
   const lFoot = pt(cx - 10, top + 78);
   const rFoot = pt(cx + 10, top + 78);
 
-  chest.pin = true; // raiz segue o player
+  chest.pin = true;
 
   const points = [head, chest, hip, lShoulder, rShoulder];
   if (!sev.armLeft) points.push(lHand);
@@ -67,22 +62,23 @@ export function createLivingRagdoll(x, y, severed = {}) {
   if (!sev.legLeft) points.push(lKnee, lFoot);
   if (!sev.legRight) points.push(rKnee, rFoot);
 
+  // sticks mais moles → menos "duro"
   const sticks = [
-    stick(head, chest, 17, 0.7),
-    stick(chest, hip, 20, 0.65),
-    stick(chest, lShoulder, 12, 0.55),
-    stick(chest, rShoulder, 12, 0.55),
-    stick(lShoulder, rShoulder, 24, 0.3),
+    stick(head, chest, 17, 0.45),
+    stick(chest, hip, 20, 0.4),
+    stick(chest, lShoulder, 12, 0.35),
+    stick(chest, rShoulder, 12, 0.35),
+    stick(lShoulder, rShoulder, 24, 0.2),
   ];
-  if (!sev.armLeft) sticks.push(stick(lShoulder, lHand, 20, 0.35));
-  if (!sev.armRight) sticks.push(stick(rShoulder, rHand, 20, 0.35));
+  if (!sev.armLeft) sticks.push(stick(lShoulder, lHand, 20, 0.22));
+  if (!sev.armRight) sticks.push(stick(rShoulder, rHand, 20, 0.22));
   if (!sev.legLeft) {
-    sticks.push(stick(hip, lKnee, 15, 0.4));
-    sticks.push(stick(lKnee, lFoot, 15, 0.35));
+    sticks.push(stick(hip, lKnee, 15, 0.28));
+    sticks.push(stick(lKnee, lFoot, 15, 0.22));
   }
   if (!sev.legRight) {
-    sticks.push(stick(hip, rKnee, 15, 0.4));
-    sticks.push(stick(rKnee, rFoot, 15, 0.35));
+    sticks.push(stick(hip, rKnee, 15, 0.28));
+    sticks.push(stick(rKnee, rFoot, 15, 0.22));
   }
 
   return {
@@ -102,19 +98,11 @@ export function createLivingRagdoll(x, y, severed = {}) {
       rFoot,
     },
     severed: sev,
-    angle: 0, // radianos do tronco
-    omega: 0, // rad/s
+    angle: 0,
+    omega: 0,
   };
 }
 
-/**
- * @param {object} body
- * @param {number} x player left
- * @param {number} y player top
- * @param {number} dtSec
- * @param {number} velocityY arcade vertical speed (px per ~frame units)
- * @param {object} severed
- */
 export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = null) {
   if (!body) return;
   if (severed) {
@@ -129,18 +117,15 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
   const dt = Math.min(dtSec, 0.033);
   const { parts } = body;
 
-  // integração angular do tronco
-  // gravidade angular fraca + damping
-  body.omega *= Math.pow(0.92, dt * 60);
+  // damping mais leve — mantém o giro do tiro
+  body.omega *= Math.pow(0.985, dt * 60);
   body.angle += body.omega * dt;
 
-  // raiz: peito no centro do sprite, rotacionado
   const cx = x + 24;
   const cy = y + 32;
   const cos = Math.cos(body.angle);
   const sin = Math.sin(body.angle);
 
-  // layout local (em pé) → mundo
   const local = {
     head: [0, -20],
     chest: [0, 0],
@@ -155,7 +140,10 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
     rFoot: [10, 52],
   };
 
-  function place(name, pin) {
+  // follow mais fraco = membros mais moles
+  const FOLLOW = 0.06;
+
+  function place(name, pin, follow = FOLLOW) {
     const p = parts[name];
     if (!p) return;
     const [lx, ly] = local[name];
@@ -167,27 +155,21 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
       p.ox = wx;
       p.oy = wy;
       p.pin = true;
-    } else if (p.pin) {
-      // soltar se não é raiz
-      p.pin = false;
+      return;
     }
-    // para pontos não pinados, só dá um puxão suave em direção à pose
-    // (membros vão "atrasar" e balançar)
-    if (!p.pin) {
-      p.x += (wx - p.x) * 0.15;
-      p.y += (wy - p.y) * 0.15;
-    }
+    p.pin = false;
+    p.x += (wx - p.x) * follow;
+    p.y += (wy - p.y) * follow;
   }
 
-  // peito e ombros/hip/head mais firmes no tronco
   place("chest", true);
-  place("head", false);
-  place("hip", false);
-  place("lShoulder", false);
-  place("rShoulder", false);
+  // tronco acompanha o ângulo com follow médio
+  place("head", false, 0.12);
+  place("hip", false, 0.12);
+  place("lShoulder", false, 0.1);
+  place("rShoulder", false, 0.1);
 
-  // impulso de inércia pela velocidade vertical nos membros
-  const fall = velocityY * 0.15 * dt * 60;
+  const fall = velocityY * 0.12 * dt * 60;
   for (const name of [
     "lHand",
     "rHand",
@@ -200,37 +182,26 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
   ]) {
     const p = parts[name];
     if (!p || p.pin) continue;
-    // verlet step
-    const vx = (p.x - p.ox) * 0.98;
-    const vy = (p.y - p.oy) * 0.98 + fall * 0.02 + 0.25 * dt * 60;
+    const vx = (p.x - p.ox) * 0.985;
+    const vy = (p.y - p.oy) * 0.985 + fall * 0.025 + 0.2 * dt * 60;
     p.ox = p.x;
     p.oy = p.y;
     p.x += vx;
     p.y += vy;
   }
 
-  // puxão de pose nos membros (atraso = balanço)
-  for (const name of [
-    "lHand",
-    "rHand",
-    "lKnee",
-    "rKnee",
-    "lFoot",
-    "rFoot",
-  ]) {
+  for (const name of ["lHand", "rHand", "lKnee", "rKnee", "lFoot", "rFoot"]) {
     const p = parts[name];
     if (!p) continue;
-    if (body.severed.armLeft && (name === "lHand")) continue;
-    if (body.severed.armRight && (name === "rHand")) continue;
+    if (body.severed.armLeft && name === "lHand") continue;
+    if (body.severed.armRight && name === "rHand") continue;
     if (body.severed.legLeft && (name === "lKnee" || name === "lFoot")) continue;
     if (body.severed.legRight && (name === "rKnee" || name === "rFoot")) continue;
-    place(name, false);
+    place(name, false, 0.05); // bem mole
   }
 
-  // constraints
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     for (const s of body.sticks) {
-      // skip sticks to severed limbs
       const sev = body.severed;
       if (sev.armLeft && (s.a === parts.lHand || s.b === parts.lHand)) continue;
       if (sev.armRight && (s.a === parts.rHand || s.b === parts.rHand)) continue;
@@ -252,16 +223,14 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
         continue;
       constrain(s);
     }
-    // re-pin chest
     place("chest", true);
   }
 }
 
-/** Impulso angular: + = frente (horário em coords y-down ≈ horário na tela), - = trás */
 export function livingImpulse(body, omegaAdd) {
   if (!body) return;
   body.omega += omegaAdd;
-  body.omega = Math.max(-14, Math.min(14, body.omega));
+  body.omega = Math.max(-18, Math.min(18, body.omega));
 }
 
 export function livingSnapshot(body) {

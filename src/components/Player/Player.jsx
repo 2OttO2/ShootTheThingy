@@ -16,23 +16,27 @@ import {
 } from "../../physics/livingRagdoll.js";
 
 /**
- * Ordem de dano (ciclo round-robin):
- * 1 tiro em cada parte → volta pro início.
- * Partes: pernaE, pernaD, braçoE, braçoD, testa, genital, coração.
- * Membro cai só após 3 acertos nesse membro (ao longo de várias voltas).
+ * Ordem de dano: membro → torso → cabeça → próximo membro → …
+ * Ex: pernaE, torso, cabeça, pernaD, torso, cabeça, braçoE, …
+ * Membro só cai após 3 acertos nele (várias voltas no ciclo).
  */
 
 const LIMB_ORDER = ["legLeft", "legRight", "armLeft", "armRight"];
 
-/** Ciclo completo de mira — 1 tiro por slot antes de repetir */
+/** membro, torso, cabeça, membro, torso, cabeça… */
 const SHOT_CYCLE = [
   "legLeft",
-  "legRight",
-  "armLeft",
-  "armRight",
-  "forehead",
-  "groin",
   "heart",
+  "forehead",
+  "legRight",
+  "groin",
+  "forehead",
+  "armLeft",
+  "heart",
+  "forehead",
+  "armRight",
+  "groin",
+  "forehead",
 ];
 
 const LIMB_DETACH = {
@@ -418,12 +422,19 @@ function Player({
     if (deathType !== "none") return;
     lastTick.current = shotTick;
     applyShot();
-    // tiro = rotação pra FRENTE (positivo); mesma magnitude do bounce
-    const spinAmt = 4.2 + Math.random() * 1.6;
-    if (livingRef.current) {
-      livingImpulse(livingRef.current, spinAmt);
+    // garante ragdoll vivo antes do impulso (evita tiro sem giro)
+    if (!livingRef.current) {
+      livingRef.current = createLivingRagdoll(playerX, drawYRef.current, {
+        legLeft: limbsRef.current.legLeft.severed,
+        legRight: limbsRef.current.legRight.severed,
+        armLeft: limbsRef.current.armLeft.severed,
+        armRight: limbsRef.current.armRight.severed,
+      });
     }
-    spinRef.current += spinAmt * 40; // compat visual residual
+    // tiro = rotação pra FRENTE (+); bounce usa o mesmo valor em −
+    const spinAmt = 6.5 + Math.random() * 2.5;
+    livingImpulse(livingRef.current, spinAmt);
+    spinRef.current += spinAmt * 40;
     kickRef.current = 5 + Math.random() * 7;
     setKickY(kickRef.current);
   }, [shotTick, deathType, playerX]);
@@ -826,7 +837,7 @@ function Player({
       const bounceFloor = prev > 2.5 && vy < -1.5;
       const bounceCeil = prev < -2.5 && vy > 1.5;
       if ((bounceFloor || bounceCeil) && livingRef.current) {
-        const spinAmt = 4.2 + Math.random() * 1.6; // mesmo range do tiro
+        const spinAmt = 6.5 + Math.random() * 2.5; // mesmo range do tiro
         livingImpulse(livingRef.current, -spinAmt); // trás
         spinRef.current -= spinAmt * 40;
       }
