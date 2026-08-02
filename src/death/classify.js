@@ -1,13 +1,8 @@
 import { DeathType, createDeathEvent } from "./types.js";
 
 /**
- * Classificação com colisão lateral:
- *
- * face left/right → SPIN (corpo rimba no flanco)
- * top  + tip  → hang
- * top  + base → bounce
- * bottom + tip → impale / impale_leg
- * bottom + base → flop
+ * Ponta do spike → impale / hang (prioridade).
+ * Flanco só quando NÃO está na ponta.
  */
 export function classifyDeath(hitTop, hitBottom, ctx = {}) {
   const velocityY = ctx.velocityY ?? 0;
@@ -30,42 +25,55 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
   const absVy = Math.abs(velocityY);
   const lateral = hit.lateral ?? 0;
   const impact = Math.max(
-    0.85,
-    Math.min(2.0, 0.85 + absVy / 16 + lateral * 0.45)
+    0.9,
+    Math.min(2.1, 0.9 + absVy / 14 + (region === "tip" ? 0.25 : 0))
   );
   const tip = hit.tip || {
     x: playerX + (ctx.playerW ?? 36) / 2,
     y: playerY,
   };
 
+  // distância do centro do player à ponta
+  const cx = playerX + (ctx.playerW ?? 36) / 2;
+  const cy = playerY + (ctx.playerH ?? 56) * 0.5;
+  const distTip = tip ? Math.hypot(cx - tip.x, cy - tip.y) : 999;
+  const onTip =
+    region === "tip" ||
+    face === "tip" ||
+    distTip < 36;
+
   let type = DeathType.FLOP;
 
-  // colisão lateral tem prioridade — não empala de frente se bateu no flanco
-  if (face === "left" || face === "right") {
+  if (onTip) {
+    // PRIORIDADE: ponta empala / pendura
+    if (hit.side === "top") {
+      type = DeathType.HANG;
+    } else if (part === "legs") {
+      type = DeathType.IMPALE_LEG;
+    } else if (part === "head") {
+      // cabeça na ponta de baixo ainda empala pelo peito/pescoço
+      type = DeathType.IMPALE;
+    } else {
+      type = DeathType.IMPALE;
+    }
+  } else if (face === "left" || face === "right") {
     type = DeathType.SPIN;
   } else if (hit.side === "top") {
     type = region === "base" ? DeathType.BOUNCE : DeathType.HANG;
   } else {
-    if (region === "base") {
-      type = DeathType.FLOP;
-    } else if (part === "legs") {
-      type = DeathType.IMPALE_LEG;
-    } else {
-      type = DeathType.IMPALE;
-    }
+    type = region === "base" ? DeathType.FLOP : DeathType.IMPALE;
   }
 
-  // offsetX: lateral forçado pro sentido do flanco
   let offsetX = hit.offsetX || 0;
-  if (face === "left") offsetX = Math.min(offsetX, -12);
-  if (face === "right") offsetX = Math.max(offsetX, 12);
+  if (!onTip && face === "left") offsetX = Math.min(offsetX, -12);
+  if (!onTip && face === "right") offsetX = Math.max(offsetX, 12);
 
   return createDeathEvent({
     type,
     side: hit.side,
     tip,
     bodyPart: part,
-    region: face === "left" || face === "right" ? "tip" : region,
+    region: onTip ? "tip" : region,
     offsetX,
     impact,
     playerX,

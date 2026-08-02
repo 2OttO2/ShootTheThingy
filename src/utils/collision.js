@@ -120,11 +120,12 @@ function contactRegion(player, hb) {
   const distBase = Math.hypot(cx - bx, cy - by);
 
   if (hb.side === "bottom") {
-    const midY = (tip.y + by) / 2;
-    if (cy <= midY + 8 || distTip < distBase) return "tip";
+    // terço superior do triângulo = ponta (impale)
+    const tipZone = tip.y + (by - tip.y) * 0.42;
+    if (cy <= tipZone || distTip < distBase * 0.85 || distTip < 38) return "tip";
     return "base";
   }
-  if (distTip < 42 || distTip < distBase * 0.9) return "tip";
+  if (distTip < 48 || distTip < distBase * 0.85) return "tip";
   return "base";
 }
 
@@ -181,8 +182,12 @@ function contactFace(player, hb, region, offsetX) {
     return leftHits >= rightHits ? "left" : "right";
   }
 
-  // offset forte mesmo sem amostras claras = lateral
-  if (lateral > lateralThresh * 1.15 && region !== "base") {
+  // perto da ponta geometrica → sempre tip (impale)
+  const distToTip = Math.hypot(cx - tip.x, cy - tip.y);
+  if (distToTip < size * 0.42) return "tip";
+
+  // offset forte só conta como lateral longe da ponta
+  if (lateral > lateralThresh * 1.25 && region !== "tip" && distToTip > size * 0.5) {
     return offsetX > 0 ? "right" : "left";
   }
 
