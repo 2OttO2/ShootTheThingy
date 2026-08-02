@@ -16,6 +16,7 @@ import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
 import { findAllSpikeCollisionsQuad } from "./utils/collision.js";
 import { buildSpikeQuadTree } from "./utils/quadtree.js";
+import { cullSpikeHitboxes } from "./utils/spatialHash.js";
 import { classifyDeath, classifyStall, DeathType } from "./death/index.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
 
@@ -353,11 +354,19 @@ function App() {
 
     const topBoxes = createSpikeHitboxes(spikesRef.current.top, "top");
     const bottomBoxes = createSpikeHitboxes(spikesRef.current.bottom, "bottom");
-    // OBB + quadtree: candidatos perto do player, teste fino só neles
-    const allBoxes =
+    // 1) culling: fora da tela / longe do player
+    // 2) quadtree: broadphase espacial
+    // 3) OBB fino só nos candidatos
+    const rawBoxes =
       topBoxes.length || bottomBoxes.length
         ? [...topBoxes, ...bottomBoxes]
         : [];
+    const allBoxes = cullSpikeHitboxes(rawBoxes, {
+      focusX: pCx,
+      focusY: pCy,
+      focusRadius: 260,
+      margin: 64,
+    });
     const spikeTree = buildSpikeQuadTree(allBoxes);
     const hits = findAllSpikeCollisionsQuad(player, spikeTree);
     const hitTop = hits.find((h) => h.side === "top") || null;
@@ -592,6 +601,8 @@ function App() {
           />
           <BloodLayer
             ref={bloodRef}
+            focusX={300 + 24}
+            focusY={drawY + 32}
             active={
               gameState === GAME_STATE.PLAYING ||
               gameState === GAME_STATE.DYING ||

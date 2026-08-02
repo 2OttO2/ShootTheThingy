@@ -9,13 +9,14 @@ import {
   stepBlood,
   clearBlood,
   setBloodFloor,
+  setBloodFocus,
 } from "../../utils/bloodParticles.js";
 
 /**
  * Canvas blood layer — sem React state, sem manchas no chão.
  *   bloodRef.current.burst / drip / arterial / stump / clear
  */
-const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
+const BloodLayer = forwardRef(function BloodLayer({ active = true, focusX = 324, focusY = 300 }, ref) {
   const systemRef = useRef(null);
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
@@ -106,6 +107,7 @@ const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
       const dtNorm = dt / 16.67;
 
       const sys = systemRef.current;
+      setBloodFocus(sys, focusX, focusY);
       stepBlood(sys, dtNorm);
 
       const ctx = canvas.getContext("2d");
@@ -129,4 +131,5 @@ const BloodLayer = forwardRef(function BloodLayer({ active = true }, ref) {
 });
 
 export default BloodLayer;
+
 

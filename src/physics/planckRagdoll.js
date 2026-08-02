@@ -15,6 +15,7 @@ import {
   Settings,
 } from "planck-js";
 import { DeathType } from "../death/types.js";
+import { SpatialHash } from "../utils/spatialHash.js";
 
 Settings.maxTranslation = 25;
 Settings.maxTranslationSquared = 25 * 25;
@@ -83,11 +84,37 @@ function impulse(body, ix, iy) {
   body.applyLinearImpulse(Vec2(ix, iy), body.getWorldCenter(), true);
 }
 
-function addSpikeObstacles(world, obstacles) {
+/**
+ * Só cria fixtures de spike PERTO do ragdoll (spatial hash).
+ * Evita dezenas de polígonos estáticos inúteis no world Planck.
+ */
+function addSpikeObstacles(world, obstacles, focusX = 320, focusY = 300) {
   if (!obstacles?.length) return [];
-  const spikeBodies = [];
+
+  const hash = new SpatialHash(96);
   for (const hb of obstacles) {
     if (!hb?.points || hb.points.length < 3) continue;
+    let minX = hb.points[0].x,
+      minY = hb.points[0].y,
+      maxX = hb.points[0].x,
+      maxY = hb.points[0].y;
+    for (const p of hb.points) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    hash.insert({ minX, minY, maxX, maxY, ref: hb });
+  }
+
+  // raio generoso em torno do ponto de morte
+  const near = hash.queryRadius(focusX, focusY, 280);
+  const spikeBodies = [];
+  const seen = new Set();
+  for (const item of near) {
+    const hb = item.ref || item;
+    if (!hb?.points || seen.has(hb)) continue;
+    seen.add(hb);
     try {
       const body = world.createBody({ type: "static" });
       body.createFixture({
@@ -213,7 +240,7 @@ export function createRagdoll(x, y, opts = {}) {
   world.createBody().createFixture(Edge(Vec2(16, -200), Vec2(16, floorY + 50)));
   world.createBody().createFixture(Edge(Vec2(maxX, -200), Vec2(maxX, floorY + 50)));
 
-  addSpikeObstacles(world, opts.obstacles ?? []);
+  addSpikeObstacles(world, opts.obstacles ?? [], x + 24, y + 32);
 
   // SEMPRE spawna onde o player morreu — zero teleporte pra ponta
   let hx = x + 24;

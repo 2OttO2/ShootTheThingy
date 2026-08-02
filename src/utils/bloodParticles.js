@@ -1,14 +1,19 @@
 /**
- * Sangue otimizado: pool de partículas + canvas (sem manchas no chão).
- * Cap alto o bastante pro jorro agressivo; budget só freia perto do limite.
+ * Sangue: pool + canvas + LOD.
+ * LOD 0 = full, 1 = simples, 2 = skip frame / dormindo.
  */
 
 const GRAVITY = 0.48;
 const DAMPING = 0.989;
-const MAX_PARTICLES = 180; // teto duro — FPS seguro
+const MAX_PARTICLES = 180;
 const POOL_MAX = 160;
 
+// LOD thresholds (distância do foco em px)
+const LOD1_DIST = 280;
+const LOD2_DIST = 420;
+
 let nextId = 1;
+let frameCounter = 0;
 
 function createParticle(x, y, vx, vy, opts = {}) {
   const size = opts.size ?? 2.2 + Math.random() * 4;
@@ -27,6 +32,7 @@ function createParticle(x, y, vx, vy, opts = {}) {
     rot: opts.rot ?? (Math.atan2(vy, vx) * 180) / Math.PI + 90,
     streak: !!opts.streak,
     active: true,
+    lod: 0,
   };
 }
 
@@ -35,7 +41,15 @@ export function createBloodSystem() {
     particles: [],
     floorY: typeof window !== "undefined" ? window.innerHeight - 8 : 600,
     pool: [],
+    focusX: 324,
+    focusY: 300,
   };
+}
+
+export function setBloodFocus(system, x, y) {
+  if (!system) return;
+  system.focusX = x;
+  system.focusY = y;
 }
 
 function acquireParticle(system, x, y, vx, vy, opts) {
@@ -57,6 +71,7 @@ function acquireParticle(system, x, y, vx, vy, opts) {
     p.rot = opts.rot ?? (Math.atan2(vy, vx) * 180) / Math.PI + 90;
     p.streak = !!opts.streak;
     p.active = true;
+    p.lod = 0;
   }
   return p;
 }
@@ -66,7 +81,6 @@ function releaseParticle(system, p) {
   if (system.pool.length < POOL_MAX) system.pool.push(p);
 }
 
-/** 1 = vazio, 0 = cheio. Só aperta quando passa de ~70% do teto. */
 export function bloodBudget(system) {
   if (!system) return 0;
   const r = system.particles.length / MAX_PARTICLES;
@@ -74,15 +88,24 @@ export function bloodBudget(system) {
   return Math.max(0, 1 - (r - 0.7) / 0.3);
 }
 
-/** Se está no teto, mata as mais velhas pra abrir espaço pro jorro novo. */
 function ensureRoom(system, need) {
   const room = MAX_PARTICLES - system.particles.length;
   if (room >= need) return need;
   const kill = need - room;
-  // remove do início (mais antigas no array)
   const victims = system.particles.splice(0, kill);
   for (const p of victims) releaseParticle(system, p);
   return need;
+}
+
+function particleLod(system, p) {
+  const fx = system.focusX ?? 324;
+  const fy = system.focusY ?? 300;
+  const d = Math.hypot(p.x - fx, p.y - fy);
+  // longe + quase morto → LOD alto
+  const lifeRatio = p.life / (p.maxLife || 1);
+  if (d > LOD2_DIST || (d > LOD1_DIST && lifeRatio < 0.25)) return 2;
+  if (d > LOD1_DIST || lifeRatio < 0.35) return 1;
+  return 0;
 }
 
 export function bloodBurst(system, x, y, opts = {}) {
@@ -104,21 +127,16 @@ export function bloodBurst(system, x, y, opts = {}) {
 
   let n = Math.ceil(count * (0.75 + budget * 0.35));
 
-  // caps por modo — mais generosos, ainda limitados
   if (mode === "death") n = Math.min(28, Math.floor(n * 1.55));
   else if (mode === "drip" || mode === "venous") n = Math.max(2, Math.min(n, 6));
   else if (mode === "arterial") n = Math.max(4, Math.min(n, 12));
   else if (mode === "stump") n = Math.max(3, Math.min(n, 12));
-  else n = Math.max(3, Math.min(n, 18)); // shot
+  else n = Math.max(3, Math.min(n, 18));
 
   n = ensureRoom(system, n);
 
   for (let i = 0; i < n; i++) {
-    let angle;
-    let speedBase;
-    let streak;
-    let size;
-    let life;
+    let angle, speedBase, streak, size, life;
 
     switch (mode) {
       case "death":
@@ -129,7 +147,6 @@ export function bloodBurst(system, x, y, opts = {}) {
         life = 0.7 + Math.random() * 0.9;
         break;
       case "arterial":
-        // jorro direcionado pra cima/lados — mais forte
         angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
         speedBase = 10 + Math.random() * 12;
         streak = Math.random() > 0.2;
@@ -151,7 +168,7 @@ export function bloodBurst(system, x, y, opts = {}) {
         size = 1.5 + Math.random() * 2.8;
         life = 0.45 + Math.random() * 0.5;
         break;
-      default: // shot
+      default:
         angle = Math.random() * Math.PI * 2;
         speedBase = 6 + Math.random() * 10;
         streak = Math.random() > 0.3;
@@ -170,7 +187,6 @@ export function bloodBurst(system, x, y, opts = {}) {
     let vx = Math.cos(angle) * speed + vxBias * 4.5;
     let vy = Math.sin(angle) * speed + vyBias * 2.5;
     if (mode === "arterial") vy -= 3 + Math.random() * 4;
-    // menos freio em +X pra não "sumir" o spray
     if (vx > 5) vx *= 0.45;
 
     system.particles.push(
@@ -206,36 +222,63 @@ export function bloodStump(system, x, y, opts = {}) {
   });
 }
 
+/**
+ * Step com LOD:
+ * 0 = física full + rot de streak
+ * 1 = física simplificada, sem rot
+ * 2 = atualiza a cada 2 frames, gravidade dobrada no passo
+ */
 export function stepBlood(system, dtNorm = 1) {
   if (!system) return;
+  frameCounter++;
 
   const floorY = system.floorY;
   const g = GRAVITY * dtNorm;
   const damp = Math.pow(DAMPING, dtNorm);
   const alive = [];
+  const oddFrame = frameCounter & 1;
 
   for (const p of system.particles) {
-    p.life -= dtNorm * 0.019;
+    const lod = particleLod(system, p);
+    p.lod = lod;
+
+    // LOD2: skip em frames pares
+    if (lod >= 2 && oddFrame) {
+      alive.push(p);
+      continue;
+    }
+
+    const stepScale = lod >= 2 ? 2 : 1; // compensar frame skip
+    const dt = dtNorm * stepScale;
+
+    p.life -= dt * 0.019;
     if (p.life <= 0) {
       releaseParticle(system, p);
       continue;
     }
 
-    p.vy += g;
-    p.vx *= damp;
-    p.vy *= damp;
-    p.x += p.vx * dtNorm;
-    p.y += p.vy * dtNorm;
-
-    if (p.streak && Math.abs(p.vx) + Math.abs(p.vy) > 0.35) {
-      p.rot = (Math.atan2(p.vy, p.vx) * 180) / Math.PI + 90;
+    if (lod === 0) {
+      p.vy += g * stepScale;
+      p.vx *= Math.pow(DAMPING, dt);
+      p.vy *= Math.pow(DAMPING, dt);
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.streak && Math.abs(p.vx) + Math.abs(p.vy) > 0.35) {
+        p.rot = (Math.atan2(p.vy, p.vx) * 180) / Math.PI + 90;
+      }
+    } else {
+      // LOD1/2: sem damp fino, sem rot
+      p.vy += g * stepScale * 1.05;
+      p.vx *= 0.99;
+      p.vy *= 0.99;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
     }
 
     if (p.y + p.height * 0.5 > floorY) {
       releaseParticle(system, p);
       continue;
     }
-
     if (p.y < 4) {
       p.y = 4;
       p.vy *= -0.25;
@@ -247,6 +290,7 @@ export function stepBlood(system, dtNorm = 1) {
   system.particles = alive;
 }
 
+/** Snapshot pra draw — LOD2 pode ser menor visualmente */
 export function bloodSnapshot(system) {
   if (!system) return [];
   return system.particles;
@@ -263,10 +307,21 @@ export function setBloodFloor(system, floorY) {
 }
 
 export function getBloodStats(system) {
-  if (!system) return { particles: 0, budget: 1 };
+  if (!system) return { particles: 0, budget: 1, lod0: 0, lod1: 0, lod2: 0 };
+  let lod0 = 0,
+    lod1 = 0,
+    lod2 = 0;
+  for (const p of system.particles) {
+    if (p.lod === 0) lod0++;
+    else if (p.lod === 1) lod1++;
+    else lod2++;
+  }
   return {
     particles: system.particles.length,
     budget: bloodBudget(system),
+    lod0,
+    lod1,
+    lod2,
   };
 }
 
