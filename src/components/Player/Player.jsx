@@ -10,13 +10,24 @@ import {
 } from "../../utils/ragdoll.js";
 
 /**
- * Ordem de dano:
- * 1) perna E → 2) perna D → 3) braço E → 4) braço D  (3 tiros cada, 2 furos visíveis)
- * 5) testa → 6) genital → 7) coração  (1 tiro cada marca)
- * depois: aleatório na mesma região (torso/cabeça)
+ * Ordem de dano (ciclo round-robin):
+ * 1 tiro em cada parte → volta pro início.
+ * Partes: pernaE, pernaD, braçoE, braçoD, testa, genital, coração.
+ * Membro cai só após 3 acertos nesse membro (ao longo de várias voltas).
  */
 
 const LIMB_ORDER = ["legLeft", "legRight", "armLeft", "armRight"];
+
+/** Ciclo completo de mira — 1 tiro por slot antes de repetir */
+const SHOT_CYCLE = [
+  "legLeft",
+  "legRight",
+  "armLeft",
+  "armRight",
+  "forehead",
+  "groin",
+  "heart",
+];
 
 const LIMB_DETACH = {
   legLeft: { ox: 12, oy: 52, w: 10, h: 22, kind: "leg" },
@@ -180,19 +191,19 @@ function torsionShotImpulse(omega, limbs, hitLeftPct = 50) {
   // alavanca: tiro longe do centro gira mais
   const lever = (hitLeftPct - 50) / 50; // -1..1
   const side = lever >= 0 ? 1 : -1;
-  const mag = (520 + Math.random() * 280) / I;
+  const mag = (200 + Math.random() * 140) / I;
   // força no sentido da alavanca (ou aleatório se centro)
   const dir = Math.abs(lever) < 0.15 ? (Math.random() > 0.5 ? 1 : -1) : side;
   let next = omega + dir * mag * (0.65 + Math.abs(lever) * 0.55);
-  return Math.max(-900, Math.min(900, next));
+  return Math.max(-380, Math.min(380, next));
 }
 
 function stepTorsion({ angle, omega, limbs, velocityY, onFloor, dtSec }) {
   const I = torsionInertia(limbs);
   // torque aerodinâmico + queda (corpo "rola" no ar)
-  const tauDrag = -0.55 * omega;
-  const tauQuad = -0.0012 * omega * Math.abs(omega);
-  const tauFall = velocityY * 2.2; // queda aumenta rotação no sentido do movimento
+  const tauDrag = -1.35 * omega;
+  const tauQuad = -0.0025 * omega * Math.abs(omega);
+  const tauFall = velocityY * 0.9;
   let a = (tauDrag + tauQuad + tauFall) / I;
 
   let w = omega + a * dtSec;
@@ -205,7 +216,7 @@ function stepTorsion({ angle, omega, limbs, velocityY, onFloor, dtSec }) {
     w *= Math.pow(0.995, dtSec * 60); // atrito do ar fraco
   }
 
-  w = Math.max(-900, Math.min(900, w));
+  w = Math.max(-420, Math.min(420, w));
   let th = angle + w * dtSec;
   // unwrap só pra não estourar float
   if (th > 1080) th -= 720;
@@ -248,6 +259,7 @@ function Player({
   const spinRef = useRef(0); // ω graus/segundo
   const kickRef = useRef(0);
   const lastHitLeftRef = useRef(50); // onde o tiro acertou (alavanca)
+  const cycleIndexRef = useRef(0); // índice no SHOT_CYCLE
 
   const lastTick = useRef(0);
   const velocityRef = useRef(velocityY);
@@ -277,13 +289,26 @@ function Player({
     let spot = null;
     let severedNow = false;
 
-    const nextLimb = LIMB_ORDER.find((id) => !L[id].severed);
-    if (nextLimb) {
-      targetPart = nextLimb;
-      const limb = L[nextLimb];
+    // round-robin: 1 tiro por parte do ciclo (pula membros já cortados)
+    let picked = null;
+    let pickedIdx = cycleIndexRef.current;
+    for (let n = 0; n < SHOT_CYCLE.length; n++) {
+      const idx = (cycleIndexRef.current + n) % SHOT_CYCLE.length;
+      const id = SHOT_CYCLE[idx];
+      if (LIMB_ORDER.includes(id) && L[id].severed) continue;
+      picked = id;
+      pickedIdx = idx;
+      break;
+    }
+    // próximo ciclo começa depois do escolhido
+    cycleIndexRef.current = (pickedIdx + 1) % SHOT_CYCLE.length;
+
+    if (picked && LIMB_ORDER.includes(picked)) {
+      targetPart = picked;
+      const limb = L[picked];
       limb.hits += 1;
 
-      const spots = LIMB_HOLE_SPOTS[nextLimb];
+      const spots = LIMB_HOLE_SPOTS[picked];
       const holeIdx = Math.min(limb.holes.length, spots.length - 1);
       const pos = jitter(spots[holeIdx], 3);
       if (limb.holes.length < LIMB_MAX_HOLES) {
@@ -291,19 +316,16 @@ function Player({
       } else {
         limb.holes[limb.holes.length - 1] = pos;
       }
-
       spot = pos;
 
       if (limb.hits >= LIMB_HP) {
         limb.severed = true;
         severedNow = true;
-
-        // membro isolado que cai sangrando
-        const det = LIMB_DETACH[nextLimb];
+        const det = LIMB_DETACH[picked];
         if (det) {
           const piece = {
-            id: `${nextLimb}-${Date.now()}`,
-            part: nextLimb,
+            id: `${picked}-${Date.now()}`,
+            part: picked,
             kind: det.kind,
             x: playerX + det.ox,
             y: drawYRef.current + det.oy,
@@ -319,23 +341,17 @@ function Player({
           setDetachedLimbs(detachedRef.current);
         }
       }
-
       setLimbs(L);
       limbsRef.current = L;
+    } else if (picked && VITAL_SPOTS[picked]) {
+      // testa / genital / coração — marca e sangra, sem sever
+      targetPart = picked;
+      spot = jitter(VITAL_SPOTS[picked], 2.5);
     } else {
-      let vIdx = vitalRef.current;
-      if (vIdx < VITAL_ORDER.length) {
-        targetPart = VITAL_ORDER[vIdx];
-        spot = jitter(VITAL_SPOTS[targetPart], 2.5);
-        vIdx += 1;
-        setVitalIndex(vIdx);
-        vitalRef.current = vIdx;
-      } else {
-        const region = Math.random() > 0.35 ? "torso" : "head";
-        targetPart = region;
-        const pool = REGION_SPOTS[region];
-        spot = jitter(pool[Math.floor(Math.random() * pool.length)], 5);
-      }
+      const region = Math.random() > 0.35 ? "torso" : "head";
+      targetPart = region;
+      const pool = REGION_SPOTS[region];
+      spot = jitter(pool[Math.floor(Math.random() * pool.length)], 5);
     }
 
     const wound = {
@@ -400,7 +416,7 @@ function Player({
       limbsRef.current,
       hitLeft
     );
-    kickRef.current = 10 + Math.random() * 12;
+    kickRef.current = 5 + Math.random() * 7;
     setKickY(kickRef.current);
   }, [shotTick, deathType, playerX]);
 
@@ -503,6 +519,7 @@ function Player({
       angleRef.current = 0;
       spinRef.current = 0;
       kickRef.current = 0;
+      cycleIndexRef.current = 0;
       setBodyAngle(0);
       setKickY(0);
       detachedRef.current = [];
@@ -718,7 +735,7 @@ function Player({
   }, [deathType]);
 
   // membros levemente atrasados no giro = sensação de torção do tronco
-  const limbLag = Math.max(-28, Math.min(28, -spinRef.current * 0.03));
+  const limbLag = Math.max(-16, Math.min(16, -spinRef.current * 0.02));
   const tilt = bodyAngle;
   const isDying = deathType !== "none";
 
