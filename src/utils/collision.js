@@ -1,3 +1,4 @@
+
 /**
  * Colisão jogador (OBB rotacionado) × spike (triângulo)
  * + detecção de face: tip | base | left | right
@@ -116,7 +117,7 @@ function playerEdges(player) {
 }
 
 /** AABB do OBB (pra culling rápido) */
-function playerAabb(player) {
+export function playerAabb(player) {
   const c = playerCorners(player);
   let minX = c[0].x,
     maxX = c[0].x,
@@ -287,25 +288,96 @@ function classifyBodyPart(player, hb) {
   return "torso";
 }
 
+function packHit(player, hb) {
+  const region = contactRegion(player, hb);
+  const face = contactFace(player, hb, region);
+  const bodyPart = classifyBodyPart(player, hb);
+  const { x: cx } = playerCenter(player);
+  const tip = hb.tip || hb.points[0];
+  return {
+    ...hb,
+    region,
+    face,
+    bodyPart,
+    tip,
+    offsetX: cx - (tip?.x ?? cx),
+    lateral: Math.abs(cx - (tip?.x ?? cx)) / Math.max(hb.size || 48, 1),
+  };
+}
+
+/**
+ * Colisão OBB × lista de spikes (linear — ok pra poucos).
+ * @param {object} player
+ * @param {object[]} hitboxes
+ */
 export function findSpikeCollision(player, hitboxes) {
   if (!player || !hitboxes?.length) return null;
   for (const hb of hitboxes) {
     if (!isPlayerCollidingWithSpike(player, hb)) continue;
-    const region = contactRegion(player, hb);
-    const face = contactFace(player, hb, region);
-    const bodyPart = classifyBodyPart(player, hb);
-    const { x: cx } = playerCenter(player);
-    const tip = hb.tip || hb.points[0];
-    return {
-      ...hb,
-      region,
-      face,
-      bodyPart,
-      tip,
-      offsetX: cx - (tip?.x ?? cx),
-      lateral: Math.abs(cx - (tip?.x ?? cx)) / Math.max(hb.size || 48, 1),
-    };
+    return packHit(player, hb);
   }
   return null;
+}
+
+/**
+ * Colisão OBB × candidatos do quadtree (só testa quem intersecta o AABB do player).
+ * @param {object} player
+ * @param {import('./quadtree.js').QuadTree} tree
+ */
+/**
+ * Retorna o hit mais próximo do centro do player entre candidatos do quadtree.
+ * Também exporta side top/bottom no objeto.
+ */
+export function findSpikeCollisionQuad(player, tree) {
+  if (!player || !tree) return null;
+  const aabb = playerAabb(player);
+  const range = {
+    minX: aabb.minX - 4,
+    minY: aabb.minY - 4,
+    maxX: aabb.maxX + 4,
+    maxY: aabb.maxY + 4,
+  };
+  const candidates = tree.query(range);
+  const seen = new Set();
+  const { x: cx, y: cy } = playerCenter(player);
+  let best = null;
+  let bestD = Infinity;
+  for (const item of candidates) {
+    const hb = item.ref;
+    if (!hb || seen.has(hb)) continue;
+    seen.add(hb);
+    if (!isPlayerCollidingWithSpike(player, hb)) continue;
+    const packed = packHit(player, hb);
+    const tip = packed.tip || hb.points[0];
+    const d = Math.hypot((tip?.x ?? cx) - cx, (tip?.y ?? cy) - cy);
+    if (d < bestD) {
+      bestD = d;
+      best = packed;
+    }
+  }
+  return best;
+}
+
+/** Todos os hits OBB nos candidatos (top e bottom no mesmo frame). */
+export function findAllSpikeCollisionsQuad(player, tree) {
+  if (!player || !tree) return [];
+  const aabb = playerAabb(player);
+  const range = {
+    minX: aabb.minX - 4,
+    minY: aabb.minY - 4,
+    maxX: aabb.maxX + 4,
+    maxY: aabb.maxY + 4,
+  };
+  const candidates = tree.query(range);
+  const seen = new Set();
+  const hits = [];
+  for (const item of candidates) {
+    const hb = item.ref;
+    if (!hb || seen.has(hb)) continue;
+    seen.add(hb);
+    if (!isPlayerCollidingWithSpike(player, hb)) continue;
+    hits.push(packHit(player, hb));
+  }
+  return hits;
 }
 

@@ -14,7 +14,8 @@ import BloodLayer from "./components/Blood/BloodLayer.jsx";
 
 import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
-import { findSpikeCollision } from "./utils/collision.js";
+import { findAllSpikeCollisionsQuad } from "./utils/collision.js";
+import { buildSpikeQuadTree } from "./utils/quadtree.js";
 import { classifyDeath, classifyStall, DeathType } from "./death/index.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
 
@@ -352,9 +353,15 @@ function App() {
 
     const topBoxes = createSpikeHitboxes(spikesRef.current.top, "top");
     const bottomBoxes = createSpikeHitboxes(spikesRef.current.bottom, "bottom");
-
-    const hitTop = findSpikeCollision(player, topBoxes);
-    const hitBottom = findSpikeCollision(player, bottomBoxes);
+    // OBB + quadtree: candidatos perto do player, teste fino só neles
+    const allBoxes =
+      topBoxes.length || bottomBoxes.length
+        ? [...topBoxes, ...bottomBoxes]
+        : [];
+    const spikeTree = buildSpikeQuadTree(allBoxes);
+    const hits = findAllSpikeCollisionsQuad(player, spikeTree);
+    const hitTop = hits.find((h) => h.side === "top") || null;
+    const hitBottom = hits.find((h) => h.side === "bottom") || null;
 
     if (hitTop || hitBottom) {
       isDeadRef.current = true;
