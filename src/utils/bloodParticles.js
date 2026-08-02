@@ -141,21 +141,21 @@ export function bloodBurst(system, x, y, opts = {}) {
     switch (mode) {
       case "death":
         angle = Math.random() * Math.PI * 2;
-        speedBase = 9 + Math.random() * 16;
+        speedBase = 4.5 + Math.random() * 7;
         streak = Math.random() > 0.25;
         size = 2.4 + Math.random() * 5;
         life = 0.7 + Math.random() * 0.9;
         break;
       case "arterial":
         angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
-        speedBase = 10 + Math.random() * 12;
+        speedBase = 4 + Math.random() * 5.5;
         streak = Math.random() > 0.2;
         size = 2 + Math.random() * 4;
         life = 0.6 + Math.random() * 0.7;
         break;
       case "stump":
         angle = Math.random() * Math.PI * 2;
-        speedBase = 7 + Math.random() * 11;
+        speedBase = 3.5 + Math.random() * 5;
         streak = Math.random() > 0.3;
         size = 2 + Math.random() * 3.8;
         life = 0.55 + Math.random() * 0.65;
@@ -163,14 +163,14 @@ export function bloodBurst(system, x, y, opts = {}) {
       case "drip":
       case "venous":
         angle = Math.PI / 2 + (Math.random() - 0.5) * 0.8;
-        speedBase = 2.5 + Math.random() * 4;
+        speedBase = 1.8 + Math.random() * 2.8;
         streak = Math.random() > 0.55;
         size = 1.5 + Math.random() * 2.8;
         life = 0.45 + Math.random() * 0.5;
         break;
       default:
         angle = Math.random() * Math.PI * 2;
-        speedBase = 6 + Math.random() * 10;
+        speedBase = 3 + Math.random() * 5;
         streak = Math.random() > 0.3;
         size = 1.8 + Math.random() * 3.5;
         life = 0.5 + Math.random() * 0.6;
@@ -181,12 +181,12 @@ export function bloodBurst(system, x, y, opts = {}) {
       speedBase *
       power *
       (1 +
-        Math.min(0.85, Math.abs(velocityY) / 20) +
-        Math.min(0.55, moveSpeed / 14));
+        Math.min(0.45, Math.abs(velocityY) / 28) +
+        Math.min(0.3, moveSpeed / 18));
 
     let vx = Math.cos(angle) * speed + vxBias * 4.5;
     let vy = Math.sin(angle) * speed + vyBias * 2.5;
-    if (mode === "arterial") vy -= 3 + Math.random() * 4;
+    if (mode === "arterial") vy -= 1.2 + Math.random() * 1.8;
     if (vx > 5) vx *= 0.45;
 
     system.particles.push(
@@ -206,18 +206,18 @@ export function bloodDrip(system, x, y, opts = {}) {
 
 export function bloodArterial(system, x, y, opts = {}) {
   bloodBurst(system, x, y, {
-    count: 7 + Math.floor(Math.random() * 5),
+    count: 6 + Math.floor(Math.random() * 4),
     mode: "arterial",
-    power: 1.2,
+    power: 0.9,
     ...opts,
   });
 }
 
 export function bloodStump(system, x, y, opts = {}) {
   bloodBurst(system, x, y, {
-    count: 7 + Math.floor(Math.random() * 4),
+    count: 5 + Math.floor(Math.random() * 3),
     mode: "stump",
-    power: 1.2,
+    power: 0.95,
     ...opts,
   });
 }

@@ -144,6 +144,94 @@ function addSpikeObstacles(world, obstacles, focusX = 320, focusY = 300) {
   return spikeBodies;
 }
 
+
+/** Destroi joints ligados a um body (planck joint list). */
+function destroyBodyJoints(world, body) {
+  if (!world || !body) return;
+  const toDestroy = [];
+  let edge = body.getJointList && body.getJointList();
+  while (edge) {
+    if (edge.joint) toDestroy.push(edge.joint);
+    edge = edge.next;
+  }
+  for (const j of toDestroy) {
+    try {
+      world.destroyJoint(j);
+    } catch (_) {}
+  }
+}
+
+/**
+ * Impale em membro → separa do tronco (tronco/head ficam).
+ * Retorna o body que fica preso no spike.
+ */
+function severLimbOnImpale(ragdoll, partName) {
+  const b = ragdoll.bodies;
+  const world = ragdoll.world;
+  if (!b || !world) return null;
+
+  const mark = (side) => {
+    if (ragdoll.severed) ragdoll.severed[side] = true;
+  };
+
+  // perna esquerda: solta hip↔knee (cadeia knee+foot livre, presa no spike)
+  if (partName === "lFoot" || partName === "lKnee") {
+    if (b.lKnee) destroyBodyJoints(world, b.lKnee);
+    // recria só knee↔foot se ambos existem
+    if (b.lKnee && b.lFoot) {
+      try {
+        world.createJoint(
+          RevoluteJoint({
+            bodyA: b.lKnee,
+            bodyB: b.lFoot,
+            localAnchorA: Vec2(0, 8),
+            localAnchorB: Vec2(0, -7),
+            collideConnected: false,
+          })
+        );
+      } catch (_) {}
+    }
+    mark("legLeft");
+    return partName === "lFoot" && b.lFoot ? b.lFoot : b.lKnee;
+  }
+  if (partName === "rFoot" || partName === "rKnee") {
+    if (b.rKnee) destroyBodyJoints(world, b.rKnee);
+    if (b.rKnee && b.rFoot) {
+      try {
+        world.createJoint(
+          RevoluteJoint({
+            bodyA: b.rKnee,
+            bodyB: b.rFoot,
+            localAnchorA: Vec2(0, 8),
+            localAnchorB: Vec2(0, -7),
+            collideConnected: false,
+          })
+        );
+      } catch (_) {}
+    }
+    mark("legRight");
+    return partName === "rFoot" && b.rFoot ? b.rFoot : b.rKnee;
+  }
+  // braços
+  if (partName === "lHand" || partName === "lShoulder") {
+    if (b.lHand) destroyBodyJoints(world, b.lHand);
+    if (b.lShoulder) {
+      // só remove joint shoulder–chest / shoulder–hand
+      destroyBodyJoints(world, b.lShoulder);
+      // re-liga shoulder ao chest? não — membro solto
+    }
+    mark("armLeft");
+    return b.lHand || b.lShoulder;
+  }
+  if (partName === "rHand" || partName === "rShoulder") {
+    if (b.rHand) destroyBodyJoints(world, b.rHand);
+    if (b.rShoulder) destroyBodyJoints(world, b.rShoulder);
+    mark("armRight");
+    return b.rHand || b.rShoulder;
+  }
+  return null;
+}
+
 function setupContacts(ragdoll) {
   const world = ragdoll.world;
   world.on("begin-contact", (contact) => {
@@ -203,52 +291,67 @@ function setupContacts(ragdoll) {
         true
       );
 
-      // engate secundário se bateu com força no tronco/perna
-      if (speed > 70 && (isTorso || isLeg)) {
+      // engate secundário: tronco gruda; MEMBRO é amputado e fica no spike
+      const isArm =
+        part.name === "lHand" ||
+        part.name === "rHand" ||
+        part.name === "lShoulder" ||
+        part.name === "rShoulder";
+
+      if (speed > 70 && (isTorso || isLeg || isArm)) {
         try {
           if (ragdoll.pinJoint) {
             world.destroyJoint(ragdoll.pinJoint);
             ragdoll.pinJoint = null;
           }
+
+          let pinTarget = partBody;
+
+          // membro → separa do corpo; tronco/head NÃO amputam
+          if (isLeg || isArm) {
+            const detached = severLimbOnImpale(ragdoll, part.name);
+            if (detached) pinTarget = detached;
+          }
+
           const pinY =
             tip.y + (spike.side === "bottom" ? 10 : -8);
-          // NÃO teleporta o corpo inteiro — mola curta até a ponta
           const pin = world.createBody({
             type: "static",
             position: Vec2(tip.x, pinY),
           });
-          const ap = partBody.getPosition();
+          const ap = pinTarget.getPosition();
           const len = Math.max(
             6,
-            Math.min(24, Math.hypot(ap.x - tip.x, ap.y - pinY))
+            Math.min(22, Math.hypot(ap.x - tip.x, ap.y - pinY))
           );
+          // membro amputado fica preso; corpo segue a física livre
           ragdoll.pinJoint = world.createJoint(
             DistanceJoint({
               bodyA: pin,
-              bodyB: partBody,
+              bodyB: pinTarget,
               localAnchorA: Vec2(0, 0),
               localAnchorB: Vec2(0, 0),
               length: len,
-              frequencyHz: 6,
-              dampingRatio: 0.7,
+              frequencyHz: isTorso ? 5 : 8,
+              dampingRatio: 0.75,
               collideConnected: false,
             })
           );
           ragdoll.pinBody = pin;
-          ragdoll.attachBody = partBody;
-          ragdoll.breakForce = 220 + speed;
-          ragdoll.hangReleased = false;
+          ragdoll.attachBody = pinTarget;
+          ragdoll.breakForce = isTorso ? 260 + speed : 9999; // membro fica no spike
+          ragdoll.hangReleased = isTorso ? false : true; // membro: não "hang" do corpo
           ragdoll.hangTimer = 0;
           ragdoll.secondaryImpale = true;
-          ragdoll.deathType = isLeg
+          ragdoll.deathType = isLeg || isArm
             ? DeathType.IMPALE_LEG
             : DeathType.IMPALE;
           if (typeof ragdoll.onBlood === "function") {
             ragdoll.onBlood({
               x: tip.x,
               y: tip.y,
-              count: 14,
-              power: 1.5,
+              count: 12,
+              power: 1.1,
             });
           }
         } catch (_) {}
@@ -431,6 +534,21 @@ export function createRagdoll(x, y, opts = {}) {
   }
 
   if (attachBody) {
+    // se o contato foi em membro, separa do tronco ANTES de prender no spike
+    const attachName = attachBody.getUserData && attachBody.getUserData()?.name;
+    if (
+      attachName &&
+      attachName !== "chest" &&
+      attachName !== "hip" &&
+      attachName !== "head"
+    ) {
+      // precisa do objeto ragdoll parcial — marca severed no opts
+      const fakeRd = { bodies: { head, chest, hip, lShoulder, rShoulder, lHand, rHand, lKnee, rKnee, lFoot, rFoot }, world, severed: sev };
+      const det = severLimbOnImpale(fakeRd, attachName);
+      if (det) attachBody = det;
+      // membro fica no spike; não solta fácil
+      breakForce = 9999;
+    }
     pinBody = world.createBody({ type: "static", position: Vec2(tipX, tipY) });
     const ap = attachBody.getPosition();
     // comprimento = distância atual (zero snap)
