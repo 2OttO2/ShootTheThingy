@@ -74,6 +74,7 @@ function App() {
   // game state — começa no MENU
   const [gameState, setGameState] = useState(GAME_STATE.MENU);
   const isDeadRef = useRef(false);
+  const playerAngleRef = useRef(0); // radianos — hitbox acompanha rotação
   const zeroSpeedTimer = useRef(0); // ms acumulados com speed 0
   const deathDelayTimeout = useRef(null);
 
@@ -336,12 +337,17 @@ function App() {
       }
     }
 
-    // colisão — hitbox alinhada ao sprite do player (48×64 em x=300)
+    // colisão — OBB centrado no corpo, rotacionado com o ragdoll vivo
+    const pCx = 300 + 24;
+    const pCy = playerY.current + 32;
     const player = {
-      x: 300 + 8,
-      y: playerY.current + 4,
+      x: pCx - 16,
+      y: pCy - 28,
       width: 32,
       height: 56,
+      cx: pCx,
+      cy: pCy,
+      angle: playerAngleRef.current, // radianos
     };
 
     const topBoxes = createSpikeHitboxes(spikesRef.current.top, "top");
@@ -575,6 +581,7 @@ function App() {
             moveSpeed={displaySpeed}
             bloodRef={bloodRef}
             playerX={300}
+          hitboxAngleRef={playerAngleRef}
           />
           <BloodLayer
             ref={bloodRef}

@@ -1,6 +1,6 @@
 /**
- * Colisão jogador (AABB) × spike (triângulo)
- * + detecção de face: tip | base | left | right (colisão lateral)
+ * Colisão jogador (OBB rotacionado) × spike (triângulo)
+ * + detecção de face: tip | base | left | right
  */
 
 const EPS = 0.5;
@@ -44,46 +44,121 @@ function onSegment(a, b, p) {
   );
 }
 
+/** Centro do player (aceita cx/cy ou x/y + size) */
+function playerCenter(player) {
+  if (player.cx != null && player.cy != null) {
+    return { x: player.cx, y: player.cy };
+  }
+  return {
+    x: player.x + player.width * 0.5,
+    y: player.y + player.height * 0.5,
+  };
+}
+
+/** angle em radianos (0 = em pé) */
+function playerAngle(player) {
+  return player.angle || 0;
+}
+
+function rotateLocal(lx, ly, ang, cx, cy) {
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  return {
+    x: cx + lx * c - ly * s,
+    y: cy + lx * s + ly * c,
+  };
+}
+
+/** Grid de pontos no retângulo local, rotacionado com o corpo */
 function samplePlayerPoints(player) {
-  const { x, y, width: w, height: h } = player;
+  const w = player.width;
+  const h = player.height;
+  const { x: cx, y: cy } = playerCenter(player);
+  const ang = playerAngle(player);
   const pts = [];
   for (let iy = 0; iy <= 3; iy++) {
     for (let ix = 0; ix <= 2; ix++) {
-      pts.push({ x: x + (w * ix) / 2, y: y + (h * iy) / 3 });
+      const lx = -w * 0.5 + (w * ix) / 2;
+      const ly = -h * 0.5 + (h * iy) / 3;
+      pts.push(rotateLocal(lx, ly, ang, cx, cy));
     }
   }
-  pts.push({ x: x + w * 0.5, y: y + h * 0.5 });
+  pts.push({ x: cx, y: cy });
+  // extremos cabeça / pés no eixo local Y
+  pts.push(rotateLocal(0, -h * 0.5, ang, cx, cy));
+  pts.push(rotateLocal(0, h * 0.5, ang, cx, cy));
   return pts;
 }
 
-function playerEdges(player) {
-  const { x, y, width: w, height: h } = player;
-  const tl = { x, y };
-  const tr = { x: x + w, y };
-  const br = { x: x + w, y: y + h };
-  const bl = { x, y: y + h };
+function playerCorners(player) {
+  const w = player.width;
+  const h = player.height;
+  const { x: cx, y: cy } = playerCenter(player);
+  const ang = playerAngle(player);
+  const hw = w * 0.5;
+  const hh = h * 0.5;
   return [
-    [tl, tr],
-    [tr, br],
-    [br, bl],
-    [bl, tl],
+    rotateLocal(-hw, -hh, ang, cx, cy),
+    rotateLocal(hw, -hh, ang, cx, cy),
+    rotateLocal(hw, hh, ang, cx, cy),
+    rotateLocal(-hw, hh, ang, cx, cy),
   ];
+}
+
+function playerEdges(player) {
+  const c = playerCorners(player);
+  return [
+    [c[0], c[1]],
+    [c[1], c[2]],
+    [c[2], c[3]],
+    [c[3], c[0]],
+  ];
+}
+
+/** AABB do OBB (pra culling rápido) */
+function playerAabb(player) {
+  const c = playerCorners(player);
+  let minX = c[0].x,
+    maxX = c[0].x,
+    minY = c[0].y,
+    maxY = c[0].y;
+  for (let i = 1; i < c.length; i++) {
+    minX = Math.min(minX, c[i].x);
+    maxX = Math.max(maxX, c[i].x);
+    minY = Math.min(minY, c[i].y);
+    maxY = Math.max(maxY, c[i].y);
+  }
+  return { minX, maxX, minY, maxY };
 }
 
 export function isPlayerCollidingWithSpike(player, spike) {
   if (!player || !spike?.points || spike.points.length < 3) return false;
   const tri = spike.points;
-  if (samplePlayerPoints(player).some((p) => pointInTriangle(p, tri))) return true;
+
+  // culling com AABB do OBB
+  const aabb = playerAabb(player);
+  let tMinX = Infinity,
+    tMaxX = -Infinity,
+    tMinY = Infinity,
+    tMaxY = -Infinity;
   for (const v of tri) {
-    if (
-      v.x >= player.x - EPS &&
-      v.x <= player.x + player.width + EPS &&
-      v.y >= player.y - EPS &&
-      v.y <= player.y + player.height + EPS
-    ) {
-      return true;
-    }
+    tMinX = Math.min(tMinX, v.x);
+    tMaxX = Math.max(tMaxX, v.x);
+    tMinY = Math.min(tMinY, v.y);
+    tMaxY = Math.max(tMaxY, v.y);
   }
+  if (
+    aabb.maxX < tMinX - EPS ||
+    aabb.minX > tMaxX + EPS ||
+    aabb.maxY < tMinY - EPS ||
+    aabb.minY > tMaxY + EPS
+  ) {
+    return false;
+  }
+
+  if (samplePlayerPoints(player).some((p) => pointInTriangle(p, tri))) return true;
+
+  // vértice do spike dentro do OBB? (amostra + edges cobre bem)
   const edges = playerEdges(player);
   const triEdges = [
     [tri[0], tri[1]],
@@ -101,11 +176,7 @@ export function isPlayerCollidingWithSpike(player, spike) {
 function contactRegion(player, hb) {
   if (!hb?.tip) return "tip";
   const tip = hb.tip;
-  const cx = player.x + player.width * 0.5;
-  const cy =
-    hb.side === "top"
-      ? player.y + player.height * 0.2
-      : player.y + player.height * 0.65;
+  const { x: cx, y: cy } = playerCenter(player);
 
   const distTip = Math.hypot(cx - tip.x, cy - tip.y);
   const basePts = hb.points.filter(
@@ -120,7 +191,6 @@ function contactRegion(player, hb) {
   const distBase = Math.hypot(cx - bx, cy - by);
 
   if (hb.side === "bottom") {
-    // terço superior do triângulo = ponta (impale)
     const tipZone = tip.y + (by - tip.y) * 0.42;
     if (cy <= tipZone || distTip < distBase * 0.85 || distTip < 38) return "tip";
     return "base";
@@ -130,63 +200,60 @@ function contactRegion(player, hb) {
 }
 
 /**
- * Face do contato:
- *  - tip  : em cima/embaixo da ponta
- *  - base : base larga do spike
- *  - left / right : colisão lateral (flanco do triângulo)
+ * Face: tip | base | left | right
+ * Usa pontos do OBB rotacionado.
  */
-function contactFace(player, hb, region, offsetX) {
-  if (!hb?.tip || !hb.points) return region === "base" ? "base" : "tip";
+function contactFace(player, hb, region) {
+  if (!hb?.points || hb.points.length < 3) return region || "tip";
 
-  const tip = hb.tip;
-  const size = hb.size || 64;
-  const cx = player.x + player.width * 0.5;
-  const cy = player.y + player.height * 0.5;
+  const tip = hb.tip || hb.points[0];
+  const pts = samplePlayerPoints(player);
+  const { x: cx, y: cy } = playerCenter(player);
 
-  // pontos de base (não-tip)
-  const basePts = hb.points.filter(
-    (p) => Math.hypot(p.x - tip.x, p.y - tip.y) > 2
-  );
-  if (basePts.length < 2) {
-    if (Math.abs(offsetX) > size * 0.22) return offsetX > 0 ? "right" : "left";
-    return region === "base" ? "base" : "tip";
-  }
-
-  // profundidade horizontal: quão longe do eixo da ponta
-  const lateral = Math.abs(offsetX);
-  const lateralThresh = size * 0.2;
-
-  // amostra pontos do player dentro/perto do triângulo no lado
-  const samples = samplePlayerPoints(player);
+  let tipHits = 0;
   let leftHits = 0;
   let rightHits = 0;
-  let tipHits = 0;
-  for (const p of samples) {
+  let baseHits = 0;
+
+  const size = hb.size || 48;
+  for (const p of pts) {
     if (!pointInTriangle(p, hb.points)) continue;
     const dx = p.x - tip.x;
     const dy = p.y - tip.y;
-    // perto da ponta verticalmente
-    const along =
-      hb.side === "bottom"
-        ? p.y - tip.y // >=0 abaixo da ponta
-        : tip.y - p.y;
-    if (along < size * 0.35 && Math.abs(dx) < size * 0.18) {
+    const dist = Math.hypot(dx, dy);
+    if (dist < size * 0.38) {
       tipHits++;
-    } else if (dx < -2) leftHits++;
-    else if (dx > 2) rightHits++;
+      continue;
+    }
+    if (hb.side === "bottom") {
+      if (p.y > tip.y + size * 0.55) baseHits++;
+      else if (dx < -size * 0.12) leftHits++;
+      else if (dx > size * 0.12) rightHits++;
+      else tipHits++;
+    } else {
+      if (p.y < tip.y - size * 0.55) baseHits++;
+      else if (dx < -size * 0.12) leftHits++;
+      else if (dx > size * 0.12) rightHits++;
+      else tipHits++;
+    }
   }
 
-  // prioriza flanco se maioria dos pontos de contato está de lado
-  const sideHits = leftHits + rightHits;
-  if (sideHits >= tipHits && sideHits > 0 && lateral > lateralThresh * 0.6) {
-    return leftHits >= rightHits ? "left" : "right";
-  }
+  const offsetX = cx - tip.x;
+  const lateral = Math.abs(offsetX) / Math.max(size * 0.5, 1);
+  const lateralThresh = 0.55;
 
-  // perto da ponta geometrica → sempre tip (impale)
+  if (tipHits >= leftHits && tipHits >= rightHits && tipHits >= baseHits && tipHits > 0) {
+    return "tip";
+  }
+  if (baseHits > tipHits && baseHits >= leftHits && baseHits >= rightHits) {
+    return "base";
+  }
+  if (leftHits > rightHits && leftHits > 0) return "left";
+  if (rightHits > leftHits && rightHits > 0) return "right";
+
   const distToTip = Math.hypot(cx - tip.x, cy - tip.y);
   if (distToTip < size * 0.42) return "tip";
 
-  // offset forte só conta como lateral longe da ponta
   if (lateral > lateralThresh * 1.25 && region !== "tip" && distToTip > size * 0.5) {
     return offsetX > 0 ? "right" : "left";
   }
@@ -195,51 +262,49 @@ function contactFace(player, hb, region, offsetX) {
   return "tip";
 }
 
-function contactBodyPart(player, hb) {
+function classifyBodyPart(player, hb) {
   if (!hb?.tip) return "torso";
-  const tip = hb.tip;
-  const headY = player.y + player.height * 0.15;
-  const torsoY = player.y + player.height * 0.45;
-  const legsY = player.y + player.height * 0.8;
-  const dHead = Math.abs(tip.y - headY);
-  const dTorso = Math.abs(tip.y - torsoY);
-  const dLegs = Math.abs(tip.y - legsY);
-  if (dHead <= dTorso && dHead <= dLegs) return "head";
-  if (dLegs <= dTorso) return "legs";
+  const samples = samplePlayerPoints(player);
+  const inside = samples.filter((p) => pointInTriangle(p, hb.points));
+  if (!inside.length) return "torso";
+
+  // eixo local do player: ly negativo = cabeça
+  const { x: cx, y: cy } = playerCenter(player);
+  const ang = playerAngle(player);
+  const c = Math.cos(-ang);
+  const s = Math.sin(-ang);
+  let avgLy = 0;
+  for (const p of inside) {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const ly = dx * s + dy * c; // local Y
+    avgLy += ly;
+  }
+  avgLy /= inside.length;
+  const h = player.height || 56;
+  if (avgLy < -h * 0.22) return "head";
+  if (avgLy > h * 0.18) return "legs";
   return "torso";
 }
 
-/** Intensidade lateral 0..1 (quanto do impacto veio do lado) */
-function lateralIntensity(player, hb, offsetX, face) {
-  if (face !== "left" && face !== "right") return 0;
-  const size = hb.size || 64;
-  return Math.max(0.35, Math.min(1, Math.abs(offsetX) / (size * 0.45)));
-}
-
 export function findSpikeCollision(player, hitboxes) {
-  for (let i = 0; i < hitboxes.length; i++) {
-    const hb = hitboxes[i];
-    if (isPlayerCollidingWithSpike(player, hb)) {
-      const tip = hb.tip ?? null;
-      const cx = player.x + player.width * 0.5;
-      const offsetX = tip ? cx - tip.x : 0;
-      const region = contactRegion(player, hb);
-      const face = contactFace(player, hb, region, offsetX);
-      const bodyPart = contactBodyPart(player, hb);
-      const lateral = lateralIntensity(player, hb, offsetX, face);
-
-      return {
-        side: hb.side ?? "unknown",
-        index: hb.index ?? i,
-        hitbox: hb,
-        tip,
-        region,
-        face, // tip | base | left | right
-        bodyPart,
-        offsetX,
-        lateral, // 0..1
-      };
-    }
+  if (!player || !hitboxes?.length) return null;
+  for (const hb of hitboxes) {
+    if (!isPlayerCollidingWithSpike(player, hb)) continue;
+    const region = contactRegion(player, hb);
+    const face = contactFace(player, hb, region);
+    const bodyPart = classifyBodyPart(player, hb);
+    const { x: cx } = playerCenter(player);
+    const tip = hb.tip || hb.points[0];
+    return {
+      ...hb,
+      region,
+      face,
+      bodyPart,
+      tip,
+      offsetX: cx - (tip?.x ?? cx),
+      lateral: Math.abs(cx - (tip?.x ?? cx)) / Math.max(hb.size || 48, 1),
+    };
   }
   return null;
 }

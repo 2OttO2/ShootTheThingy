@@ -312,6 +312,7 @@ function Player({
   moveSpeed = 0,
   playerX = 300,
   bloodRef = null,
+  hitboxAngleRef = null, // ref do App: hitbox rotacionada
 }) {
   const [wounds, setWounds] = useState([]);
   const [bloodSpray, setBloodSpray] = useState([]);
@@ -606,6 +607,7 @@ function Player({
       prevVyRef.current = 0;
       setBodyAngle(0);
       setKickY(0);
+      if (hitboxAngleRef) hitboxAngleRef.current = 0;
       detachedRef.current = [];
       setDetachedLimbs([]);
     }
@@ -890,7 +892,9 @@ function Player({
       kickRef.current *= Math.pow(0.12, dtSec);
       setKickY(kickRef.current);
       if (livingRef.current) {
-        setBodyAngle((livingRef.current.angle * 180) / Math.PI);
+        const rad = livingRef.current.angle;
+        setBodyAngle((rad * 180) / Math.PI);
+        if (hitboxAngleRef) hitboxAngleRef.current = rad;
       }
 
       raf = requestAnimationFrame(tick);
