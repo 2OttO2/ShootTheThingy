@@ -8,6 +8,12 @@ import {
   angleBetween,
   dist,
 } from "../../utils/ragdoll.js";
+import {
+  createLivingRagdoll,
+  stepLivingRagdoll,
+  livingImpulse,
+  livingSnapshot,
+} from "../../physics/livingRagdoll.js";
 
 /**
  * Ordem de dano (ciclo round-robin):
@@ -248,6 +254,9 @@ function Player({
   const [wounds, setWounds] = useState([]);
   const [bloodSpray, setBloodSpray] = useState([]);
   const [ragdollPose, setRagdollPose] = useState(null);
+  const [livingPose, setLivingPose] = useState(null);
+  const livingRef = useRef(null);
+  const prevVyRef = useRef(0);
   const [limbs, setLimbs] = useState(emptyLimbState);
   const [vitalIndex, setVitalIndex] = useState(0);
   const [detachedLimbs, setDetachedLimbs] = useState([]); // membros isolados caindo
@@ -409,13 +418,12 @@ function Player({
     if (deathType !== "none") return;
     lastTick.current = shotTick;
     applyShot();
-    // torção: impulso angular ∝ 1/I e alavanca do ponto de impacto
-    const hitLeft = lastHitLeftRef.current;
-    spinRef.current = torsionShotImpulse(
-      spinRef.current,
-      limbsRef.current,
-      hitLeft
-    );
+    // tiro = rotação pra FRENTE (positivo); mesma magnitude do bounce
+    const spinAmt = 4.2 + Math.random() * 1.6;
+    if (livingRef.current) {
+      livingImpulse(livingRef.current, spinAmt);
+    }
+    spinRef.current += spinAmt * 40; // compat visual residual
     kickRef.current = 5 + Math.random() * 7;
     setKickY(kickRef.current);
   }, [shotTick, deathType, playerX]);
@@ -520,6 +528,9 @@ function Player({
       spinRef.current = 0;
       kickRef.current = 0;
       cycleIndexRef.current = 0;
+      livingRef.current = null;
+      setLivingPose(null);
+      prevVyRef.current = 0;
       setBodyAngle(0);
       setKickY(0);
       detachedRef.current = [];
@@ -620,6 +631,22 @@ function Player({
     const woundWorldPos = (w) => {
       const dying = deathType !== "none" && ragdollRef.current;
       if (!dying) {
+        if (livingRef.current) {
+          const pose = livingSnapshot(livingRef.current);
+          const map = {
+            legLeft: pose.lKnee,
+            legRight: pose.rKnee,
+            armLeft: pose.lHand,
+            armRight: pose.rHand,
+            forehead: pose.head,
+            head: pose.head,
+            heart: pose.chest,
+            torso: pose.chest,
+            groin: pose.hip,
+          };
+          const pt = map[w.part] || pose.chest;
+          return { x: pt.x, y: pt.y };
+        }
         return {
           x: playerX + (w.left / 100) * 48,
           y: drawYRef.current + (w.top / 100) * 64,
@@ -752,9 +779,39 @@ function Player({
     };
   }, [wounds.length, limbs, deathType, playerX, bloodRef]);
 
-    // integração de torção (I, torque, ω)
+  // ragdoll VIVO — membros balançam; tiro = frente (+), bounce = trás (−)
   useEffect(() => {
-    if (deathType !== "none") return;
+    if (deathType !== "none") {
+      livingRef.current = null;
+      setLivingPose(null);
+      return;
+    }
+
+    // recria ragdoll vivo quando membro é cortado (preserva ângulo)
+    const sevNow = {
+      legLeft: limbsRef.current.legLeft.severed,
+      legRight: limbsRef.current.legRight.severed,
+      armLeft: limbsRef.current.armLeft.severed,
+      armRight: limbsRef.current.armRight.severed,
+    };
+    if (!livingRef.current) {
+      livingRef.current = createLivingRagdoll(playerX, drawYRef.current, sevNow);
+    } else {
+      const prev = livingRef.current.severed;
+      const changed =
+        prev.legLeft !== sevNow.legLeft ||
+        prev.legRight !== sevNow.legRight ||
+        prev.armLeft !== sevNow.armLeft ||
+        prev.armRight !== sevNow.armRight;
+      if (changed) {
+        const ang = livingRef.current.angle;
+        const om = livingRef.current.omega;
+        livingRef.current = createLivingRagdoll(playerX, drawYRef.current, sevNow);
+        livingRef.current.angle = ang;
+        livingRef.current.omega = om;
+      }
+    }
+
     let raf;
     let last = 0;
     const tick = (time) => {
@@ -762,25 +819,41 @@ function Player({
       const dtMs = Math.min(32, time - last);
       last = time;
       const dtSec = dtMs / 1000;
+      const vy = velocityRef.current;
+      const prev = prevVyRef.current;
 
-      const onFloor =
-        typeof window !== "undefined" &&
-        drawYRef.current >= window.innerHeight - 90;
+      // BOUNCE: inversão de vy (chão ou teto) → rotação pra TRÁS
+      const bounceFloor = prev > 2.5 && vy < -1.5;
+      const bounceCeil = prev < -2.5 && vy > 1.5;
+      if ((bounceFloor || bounceCeil) && livingRef.current) {
+        const spinAmt = 4.2 + Math.random() * 1.6; // mesmo range do tiro
+        livingImpulse(livingRef.current, -spinAmt); // trás
+        spinRef.current -= spinAmt * 40;
+      }
+      prevVyRef.current = vy;
 
-      const next = stepTorsion({
-        angle: angleRef.current,
-        omega: spinRef.current,
-        limbs: limbsRef.current,
-        velocityY: velocityRef.current,
-        onFloor,
+      const sev = {
+        legLeft: limbsRef.current.legLeft.severed,
+        legRight: limbsRef.current.legRight.severed,
+        armLeft: limbsRef.current.armLeft.severed,
+        armRight: limbsRef.current.armRight.severed,
+      };
+
+      stepLivingRagdoll(
+        livingRef.current,
+        playerX,
+        drawYRef.current - kickRef.current,
         dtSec,
-      });
-      angleRef.current = next.angle;
-      spinRef.current = next.omega;
+        vy,
+        sev
+      );
+      setLivingPose(livingSnapshot(livingRef.current));
 
       kickRef.current *= Math.pow(0.12, dtSec);
-      setBodyAngle(angleRef.current);
       setKickY(kickRef.current);
+      if (livingRef.current) {
+        setBodyAngle((livingRef.current.angle * 180) / Math.PI);
+      }
 
       raf = requestAnimationFrame(tick);
     };
@@ -788,11 +861,8 @@ function Player({
     return () => {
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [deathType]);
+  }, [deathType, playerX, limbs.legLeft.severed, limbs.legRight.severed, limbs.armLeft.severed, limbs.armRight.severed]);
 
-  // membros levemente atrasados no giro = sensação de torção do tronco
-  const limbLag = Math.max(-16, Math.min(16, -spinRef.current * 0.02));
-  const tilt = bodyAngle;
   const isDying = deathType !== "none";
 
 
@@ -842,41 +912,21 @@ function Player({
     );
   }
 
+  const livePose = livingPose;
+
   return (
     <>
+    {livePose && <RagdollSprites pose={livePose} />}
     <div
       className={styles.player}
       style={{
         top: `${drawY - kickY}px`,
-        transform: `rotate(${tilt}deg)`,
+        opacity: 0,
+        pointerEvents: 'none',
+        transform: 'none',
       }}
     >
-      <div className={styles.body}>
-        <div className={styles.head}>
-          <div className={styles.eye} />
-          <div className={`${styles.eye} ${styles.eyeRight}`} />
-          <div className={styles.mouth} />
-        </div>
-        <div className={styles.torso} />
-        {!limbs.armLeft.severed && (
-          <div className={styles.armLeft} style={{ transform: `rotate(${18 + limbLag}deg)` }} />
-        )}
-        {!limbs.armRight.severed && (
-          <div className={styles.armRight} style={{ transform: `rotate(${-18 - limbLag}deg)` }} />
-        )}
-        {!limbs.legLeft.severed && (
-          <div className={styles.legLeft} style={{ transform: `rotate(${limbLag * 0.5}deg)` }} />
-        )}
-        {!limbs.legRight.severed && (
-          <div className={styles.legRight} style={{ transform: `rotate(${-limbLag * 0.5}deg)` }} />
-        )}
-
-        {limbs.armLeft.severed && <div className={`${styles.stump} ${styles.stumpArmLeft}`} />}
-        {limbs.armRight.severed && <div className={`${styles.stump} ${styles.stumpArmRight}`} />}
-        {limbs.legLeft.severed && <div className={`${styles.stump} ${styles.stumpLegLeft}`} />}
-        {limbs.legRight.severed && <div className={`${styles.stump} ${styles.stumpLegRight}`} />}
-      </div>
-
+      <div className={styles.body} />
       {wounds.map((w) => (
         <div
           key={w.id}
