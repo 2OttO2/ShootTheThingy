@@ -13,6 +13,8 @@ import {
   stepLivingRagdoll,
   livingImpulse,
   livingSnapshot,
+  applyBoneImpact,
+  releaseBones,
 } from "../../physics/livingRagdoll.js";
 
 /**
@@ -313,6 +315,8 @@ function Player({
   playerX = 300,
   bloodRef = null,
   hitboxAngleRef = null, // ref do App: hitbox rotacionada
+  impactEvent = null, // { id, strength, fx, fy, part } do App
+  onBodySettled = null, // score só quando corpo parar
 }) {
   const [wounds, setWounds] = useState([]);
   const [bloodSpray, setBloodSpray] = useState([]);
@@ -498,6 +502,31 @@ function Player({
     setKickY(kickRef.current);
   }, [shotTick, deathType, playerX]);
 
+  // impactos do gameplay (chão/teto/ambiente) → reação nos ossos
+  const lastImpactId = useRef(0);
+  useEffect(() => {
+    if (!impactEvent || impactEvent.id === lastImpactId.current) return;
+    if (deathType !== "none") return;
+    lastImpactId.current = impactEvent.id;
+    if (!livingRef.current) {
+      livingRef.current = createLivingRagdoll(playerX, drawYRef.current, {
+        legLeft: limbsRef.current.legLeft.severed,
+        legRight: limbsRef.current.legRight.severed,
+        armLeft: limbsRef.current.armLeft.severed,
+        armRight: limbsRef.current.armRight.severed,
+      });
+    }
+    applyBoneImpact(livingRef.current, {
+      part: impactEvent.part || "chest",
+      fx: impactEvent.fx ?? 0,
+      fy: impactEvent.fy ?? 0,
+      strength: impactEvent.strength ?? 1,
+    });
+    // spin visual residual
+    spinRef.current += (impactEvent.fx >= 0 ? 1 : -1) * (impactEvent.strength || 1) * 25;
+  }, [impactEvent, deathType, playerX]);
+
+
   useEffect(() => {
     if (deathType === "none") {
       if (ragdollRaf.current) {
@@ -519,6 +548,9 @@ function Player({
       (deathType === "spike_hang"
         ? 60
         : window.innerHeight - 64);
+    // controle off — física assume
+    if (livingRef.current) releaseBones(livingRef.current);
+
     const rd = createRagdoll(playerX, drawYRef.current, {
       deathType,
       velocityY: velocityRef.current,
@@ -904,6 +936,44 @@ function Player({
       if (raf) cancelAnimationFrame(raf);
     };
   }, [deathType, playerX, limbs.legLeft.severed, limbs.legRight.severed, limbs.armLeft.severed, limbs.armRight.severed]);
+
+  
+  // score só quando o corpo parar de se mexer
+  useEffect(() => {
+    if (deathType === "none" || !onBodySettled) return;
+    let raf;
+    let last = 0;
+    let stillMs = 0;
+    const SETTLE_SPEED = 45; // px/s médio
+    const SETTLE_NEED = 700; // ms parado
+
+    const tick = (time) => {
+      if (!last) last = time;
+      const dt = Math.min(40, time - last);
+      last = time;
+      const rd = ragdollRef.current;
+      let maxSpd = 0;
+      if (rd?.bodies) {
+        for (const b of Object.values(rd.bodies)) {
+          if (!b?.getLinearVelocity) continue;
+          const v = b.getLinearVelocity();
+          const s = Math.hypot(v.x, v.y);
+          if (s > maxSpd) maxSpd = s;
+        }
+      }
+      if (maxSpd < SETTLE_SPEED) stillMs += dt;
+      else stillMs = 0;
+      if (stillMs >= SETTLE_NEED) {
+        onBodySettled();
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [deathType, onBodySettled]);
 
   const isDying = deathType !== "none";
 

@@ -60,7 +60,10 @@ function App() {
   const [ammo, setAmmo] = useState(0);
   const [isReloading, setIsReloading] = useState(false);
   const [shotTick, setShotTick] = useState(0);
-  const [deathType, setDeathType] = useState("none"); // none | spike_side | spike_hang | spike_impale | stall
+  const [deathType, setDeathType] = useState("none");
+  const [impactEvent, setImpactEvent] = useState(null);
+  const impactIdRef = useRef(0);
+  const settledRef = useRef(false); // none | spike_side | spike_hang | spike_impale | stall
   const [deathSpike, setDeathSpike] = useState(null); // { tipX, tipY, side }
   const [deathObstacles, setDeathObstacles] = useState([]); // hitboxes na morte
   const [velocityY, setVelocityY] = useState(0);
@@ -142,6 +145,23 @@ function App() {
 
   function goToScores() {
     setGameState(GAME_STATE.SCORES);
+  }
+
+  function emitImpact({ strength, fx, fy, part }) {
+    impactIdRef.current += 1;
+    setImpactEvent({
+      id: impactIdRef.current,
+      strength,
+      fx: fx ?? 0,
+      fy: fy ?? 0,
+      part: part || "chest",
+    });
+  }
+
+  function onBodySettled() {
+    if (settledRef.current) return;
+    settledRef.current = true;
+    setGameState(GAME_STATE.DEAD);
   }
 
   function startGame(weaponId) {
@@ -279,15 +299,29 @@ function App() {
     }
 
     if (playerY.current <= teto) {
+      const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
       playerY.current = teto;
       speed.current *= -BOUNCE;
       momentum.current *= 1 - BOUNCE_SPEED_LOSS;
+      emitImpact({
+        strength: impactStr,
+        fx: 8 + impactStr * 4,
+        fy: 12 + impactStr * 6,
+        part: "head",
+      });
     }
 
     if (playerY.current >= floor) {
+      const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
       playerY.current = floor;
       speed.current *= -BOUNCE;
       momentum.current *= 1 - BOUNCE_SPEED_LOSS;
+      emitImpact({
+        strength: impactStr,
+        fx: 6 + impactStr * 3,
+        fy: -(10 + impactStr * 5),
+        part: "legLeft",
+      });
     }
 
     // morte por ficar parado (speed 0 por STALL_DEATH_MS)
@@ -304,13 +338,7 @@ function App() {
         setDeathSpike(null);
     setDeathObstacles([]);
         setGameState(GAME_STATE.DYING);
-        if (deathDelayTimeout.current) {
-          clearTimeout(deathDelayTimeout.current);
-        }
-        deathDelayTimeout.current = setTimeout(() => {
-          setGameState(GAME_STATE.DEAD);
-          deathDelayTimeout.current = null;
-        }, DEATH_DELAY_MS);
+      // score só quando onBodySettled (corpo parou)
         return;
       }
     } else {
@@ -400,14 +428,7 @@ function App() {
       setDeathObstacles([...topBoxes, ...bottomBoxes]);
       setDeathType(event.type);
       setGameState(GAME_STATE.DYING);
-
-      if (deathDelayTimeout.current) {
-        clearTimeout(deathDelayTimeout.current);
-      }
-      deathDelayTimeout.current = setTimeout(() => {
-        setGameState(GAME_STATE.DEAD);
-        deathDelayTimeout.current = null;
-      }, DEATH_DELAY_MS);
+      // score só quando onBodySettled (corpo parou)
 
       return;
     }
@@ -597,7 +618,9 @@ function App() {
             moveSpeed={displaySpeed}
             bloodRef={bloodRef}
             playerX={300}
-          hitboxAngleRef={playerAngleRef}
+            hitboxAngleRef={playerAngleRef}
+            impactEvent={impactEvent}
+            onBodySettled={onBodySettled}
           />
           <BloodLayer
             ref={bloodRef}

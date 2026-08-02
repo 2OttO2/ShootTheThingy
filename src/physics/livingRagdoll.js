@@ -1,8 +1,14 @@
 /**
- * Ragdoll vivo: tronco segue player, membros balançam (menos gelatina).
+ * Sistema contínuo de ossos (vivo + transição pra morte).
+ *
+ * VIVO: raiz (peito) segue o controle arcade; membros são físicos
+ *       e reagem a impactos proporcionais — depois recuperam pose.
+ * IMPACTO: applyBoneImpact aplica força no ponto/parte.
+ * MORTO: releaseBones() solta a raiz; física assume (ou handoff Planck).
  */
+
 function pt(x, y) {
-  return { x, y, ox: x, oy: y };
+  return { x, y, ox: x, oy: y, fx: 0, fy: 0 };
 }
 
 function dist(a, b) {
@@ -97,10 +103,85 @@ export function createLivingRagdoll(x, y, severed = {}) {
     severed: sev,
     angle: 0,
     omega: 0,
+    /** vivo: raiz pinada + recuperação; morto: solto */
+    controlled: true,
+    /** 0..1 quanto a pose de controle manda vs física livre */
+    controlBlend: 1,
   };
 }
 
-export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = null) {
+/**
+ * Impacto contínuo (vivo ou morto).
+ * @param {object} body
+ * @param {{ part?: string, fx: number, fy: number, strength?: number }} impact
+ */
+export function applyBoneImpact(body, impact = {}) {
+  if (!body?.parts) return;
+  const strength = impact.strength ?? 1;
+  const fx = (impact.fx ?? 0) * strength;
+  const fy = (impact.fy ?? 0) * strength;
+  const partName = impact.part || "chest";
+
+  const map = {
+    head: body.parts.head,
+    chest: body.parts.chest,
+    torso: body.parts.chest,
+    hip: body.parts.hip,
+    groin: body.parts.hip,
+    armLeft: body.parts.lHand || body.parts.lShoulder,
+    armRight: body.parts.rHand || body.parts.rShoulder,
+    legLeft: body.parts.lFoot || body.parts.lKnee,
+    legRight: body.parts.rFoot || body.parts.rKnee,
+    lHand: body.parts.lHand,
+    rHand: body.parts.rHand,
+    lFoot: body.parts.lFoot,
+    rFoot: body.parts.rFoot,
+  };
+  const target = map[partName] || body.parts.chest;
+  if (!target) return;
+
+  // velocidade verlet (ox/oy)
+  target.x += fx * 0.08;
+  target.y += fy * 0.08;
+  target.ox -= fx * 0.12;
+  target.oy -= fy * 0.12;
+
+  // torque no tronco proporcional ao offset horizontal do hit
+  const chest = body.parts.chest;
+  if (chest) {
+    const lever = (target.x - chest.x) / 40;
+    body.omega += lever * strength * 0.35 + (fx > 0 ? 0.15 : -0.08) * strength;
+  }
+
+  // impactos fortes afrouxam o controle temporariamente
+  if (body.controlled) {
+    const loosen = Math.min(0.75, strength * 0.12);
+    body.controlBlend = Math.max(0.25, (body.controlBlend ?? 1) - loosen);
+  }
+}
+
+/** Solta a raiz — física assume (antes do handoff Planck ou ragdoll livre). */
+export function releaseBones(body) {
+  if (!body) return;
+  body.controlled = false;
+  body.controlBlend = 0;
+  if (body.parts?.chest) body.parts.chest.pin = false;
+}
+
+export function livingImpulse(body, omegaAdd) {
+  if (!body) return;
+  body.omega += omegaAdd;
+  body.omega = Math.max(-18, Math.min(18, body.omega));
+}
+
+export function stepLivingRagdoll(
+  body,
+  x,
+  y,
+  dtSec,
+  velocityY = 0,
+  severed = null
+) {
   if (!body) return;
   if (severed) {
     body.severed = {
@@ -113,6 +194,16 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
 
   const dt = Math.min(dtSec, 0.033);
   const { parts } = body;
+  const controlled = body.controlled !== false;
+  let blend = body.controlBlend ?? 1;
+  if (controlled) {
+    // recuperação gradual do controle após impacto
+    blend = Math.min(1, blend + dt * 1.8);
+    body.controlBlend = blend;
+  } else {
+    blend = 0;
+    body.controlBlend = 0;
+  }
 
   body.omega *= Math.pow(0.978, dt * 60);
   body.angle += body.omega * dt;
@@ -136,14 +227,13 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
     rFoot: [10, 52],
   };
 
-  // follow mais firme = menos gelatina
   function place(name, pin, follow = 0.22) {
     const p = parts[name];
     if (!p) return;
     const [lx, ly] = local[name];
     const wx = cx + lx * cos - ly * sin;
     const wy = cy + lx * sin + ly * cos;
-    if (pin) {
+    if (pin && controlled) {
       p.x = wx;
       p.y = wy;
       p.ox = wx;
@@ -152,8 +242,12 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
       return;
     }
     p.pin = false;
-    p.x += (wx - p.x) * follow;
-    p.y += (wy - p.y) * follow;
+    // follow escalado pelo blend de controle
+    const f = follow * blend;
+    if (f > 0.001) {
+      p.x += (wx - p.x) * f;
+      p.y += (wy - p.y) * f;
+    }
   }
 
   place("chest", true);
@@ -176,7 +270,7 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
     const p = parts[name];
     if (!p || p.pin) continue;
     const vx = (p.x - p.ox) * 0.94;
-    const vy = (p.y - p.oy) * 0.94 + fall * 0.02 + 0.18 * dt * 60;
+    const vy = (p.y - p.oy) * 0.94 + fall * 0.02 + (controlled ? 0.18 : 0.45) * dt * 60;
     p.ox = p.x;
     p.oy = p.y;
     p.x += vx;
@@ -190,7 +284,7 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
     if (body.severed.armRight && name === "rHand") continue;
     if (body.severed.legLeft && (name === "lKnee" || name === "lFoot")) continue;
     if (body.severed.legRight && (name === "rKnee" || name === "rFoot")) continue;
-    place(name, false, 0.14);
+    place(name, false, controlled ? 0.14 : 0.02);
   }
 
   for (let i = 0; i < 4; i++) {
@@ -216,14 +310,8 @@ export function stepLivingRagdoll(body, x, y, dtSec, velocityY = 0, severed = nu
         continue;
       constrain(s);
     }
-    place("chest", true);
+    if (controlled) place("chest", true);
   }
-}
-
-export function livingImpulse(body, omegaAdd) {
-  if (!body) return;
-  body.omega += omegaAdd;
-  body.omega = Math.max(-18, Math.min(18, body.omega));
 }
 
 export function livingSnapshot(body) {
@@ -255,6 +343,20 @@ export function livingSnapshot(body) {
       ? { x: p.rFoot.x, y: p.rFoot.y }
       : { x: p.hip.x + 10, y: p.hip.y + 28 },
     severed: { ...sev },
+    controlBlend: body.controlBlend,
   };
+}
+
+/** Energia cinética aproximada dos ossos (pra debug / settle vivo). */
+export function bonesKinetic(body) {
+  if (!body?.parts) return 0;
+  let e = Math.abs(body.omega) * 10;
+  for (const p of Object.values(body.parts)) {
+    if (!p) continue;
+    const vx = p.x - p.ox;
+    const vy = p.y - p.oy;
+    e += vx * vx + vy * vy;
+  }
+  return e;
 }
 
