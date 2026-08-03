@@ -26,7 +26,6 @@ import {
   MAX_GAME_SPEED,
   MOMENTUM_GAIN,
   MOMENTUM_DECAY,
-  PLAYER_SIZE,
   GRAVITY,
   JUMP_FORCE,
   BOUNCE,
@@ -53,6 +52,34 @@ const GAME_STATE = {
   SCORES: "scores",
 };
 
+// Offsets locais (relativos ao peito) dos pontos do boneco vivo — devem
+// bater com o objeto `local` em physics/livingRagdoll.js. Usados só pra
+// calcular o quanto o corpo realmente se estende pra cima/baixo em cada
+// ângulo, pra colisão com chão/teto não flutuar nem afundar.
+const BODY_LOCAL_POINTS = [
+  [0, -20], // head
+  [0, 20], // hip
+  [-12, -2], [12, -2], // shoulders
+  [-16, 18], [16, 18], // hands
+  [-8, 36], [8, 36], // knees
+  [-10, 52], [10, 52], // feet
+];
+
+// Retorna o quanto o corpo se estende acima (top, valor <= 0) e abaixo
+// (bottom, valor >= 0) do "peito" (cy), pro ângulo atual.
+function getBodyVerticalExtents(angle) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  let top = 0;
+  let bottom = 0;
+  for (const [lx, ly] of BODY_LOCAL_POINTS) {
+    const off = lx * sin + ly * cos;
+    if (off < top) top = off;
+    if (off > bottom) bottom = off;
+  }
+  return { top, bottom };
+}
+
 function App() {
   
   //munição / reload 
@@ -63,6 +90,7 @@ function App() {
   const [isReloading, setIsReloading] = useState(false);
   const [shotTick, setShotTick] = useState(0);
   const [deathType, setDeathType] = useState("none");
+  const deathTypeRef = useRef("none"); // leitura confiável dentro do gameLoop
   const [impactEvent, setImpactEvent] = useState(null);
   const impactIdRef = useRef(0);
   const settledRef = useRef(false); // none | spike_side | spike_hang | spike_impale | stall
@@ -121,8 +149,10 @@ function App() {
   const bloodRef = useRef(null);
 
   // limites
-  const teto = TETO_HEIGHT;
-  const floor = window.innerHeight - GROUND_HEIGHT - PLAYER_SIZE;
+  const teto = TETO_HEIGHT; // Teto.module.css: height 5px, top:0 → borda em y=5
+  // linha real do chão — Ground.module.css: height 5px, bottom:1px →
+  // a borda de cima da barra fica em innerHeight - 1 - 5
+  const groundLineY = window.innerHeight - GROUND_HEIGHT - 1;
 
 
 
@@ -190,6 +220,7 @@ function App() {
       clearTimeout(deathDelayTimeout.current);
       deathDelayTimeout.current = null;
     }
+    deathTypeRef.current = "none";
     setDeathType("none");
     setDeathSpike(null);
     setDeathObstacles([]);
@@ -220,6 +251,7 @@ function App() {
       clearTimeout(deathDelayTimeout.current);
       deathDelayTimeout.current = null;
     }
+    deathTypeRef.current = "none";
     setDeathType("none");
     setDeathSpike(null);
     setDeathObstacles([]);
@@ -282,9 +314,9 @@ function App() {
       updateSpikes(dt, gameSpeed.current);
     }
 
-    // durante DYING: HUD/speed decai, física do ragdoll continua normalmente
-    // (ela roda por conta própria dentro do Player.jsx), mas o cenário não
-    // arrasta mais o cadáver. O jogo só termina quando a speed do Player
+    // durante DYING: a ÚNICA coisa que muda é o Player não poder mais
+    // atirar (bloqueado no keyDown via isDeadRef). Física/HUD/spikes
+    // seguem tocando normalmente. O jogo só termina quando a speed
     // ficar em 0 por mais de DEATH_ZERO_SPEED_MS seguidos.
     if (isDeadRef.current) {
       if (gameSpeed.current <= 0) {
@@ -325,22 +357,21 @@ function App() {
       );
     }
 
-    // OBB rotacionado: ao girar, o corpo “cresce” na vertical →
-    // colide com chão/teto mais cedo (sem flutuar). Em pé = comportamento original.
+    // Extremidades reais do corpo (cabeça/ombros/mãos/joelhos/pés),
+    // rotacionadas pelo ângulo atual — iguais às usadas no ragdoll vivo
+    // (physics/livingRagdoll.js). Corrige o pé afundando no chão quando
+    // em pé e a "levitação" quando de cabeça pra baixo.
     {
       const ang = playerAngleRef.current || 0;
-      const c = Math.abs(Math.cos(ang));
-      const s = Math.abs(Math.sin(ang));
-      const halfW = 16;
-      const halfH = 28;
-      const extentY = halfW * s + halfH * c;
-      // quanto a rotação adiciona além do em-pé
-      const extra = Math.max(0, extentY - halfH);
+      const { top: extTop, bottom: extBottom } = getBodyVerticalExtents(ang);
+      const cy = playerY.current + 32; // mesmo "cy" do ragdoll vivo
+      const bodyTopY = cy + extTop; // ponto mais alto do corpo agora
+      const bodyBottomY = cy + extBottom; // ponto mais baixo do corpo agora
 
-      // teto
-      if (playerY.current <= teto + extra) {
+      // teto — o ponto mais alto do corpo não pode passar da linha do teto
+      if (bodyTopY <= teto) {
         const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
-        playerY.current = teto + extra;
+        playerY.current += teto - bodyTopY;
         if (speed.current < 0) {
           speed.current *= -BOUNCE;
           momentum.current *= 1 - BOUNCE_SPEED_LOSS;
@@ -355,10 +386,10 @@ function App() {
         }
       }
 
-      // chão
-      if (playerY.current >= floor - extra) {
+      // chão — o ponto mais baixo do corpo não pode passar da linha do chão
+      if (bodyBottomY >= groundLineY) {
         const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
-        playerY.current = floor - extra;
+        playerY.current -= bodyBottomY - groundLineY;
         if (speed.current > 0) {
           speed.current *= -BOUNCE;
           momentum.current *= 1 - BOUNCE_SPEED_LOSS;
@@ -384,6 +415,7 @@ function App() {
           playerX: 300,
           playerY: playerY.current,
         });
+        deathTypeRef.current = stallEvent.type;
         setDeathType(stallEvent.type);
         setDeathSpike(null);
     setDeathObstacles([]);
@@ -479,6 +511,7 @@ function App() {
         lateral: hitTop?.lateral || hitBottom?.lateral || 0,
       });
       setDeathObstacles([...topBoxes, ...bottomBoxes]);
+      deathTypeRef.current = event.type;
       setDeathType(event.type);
       setGameState(GAME_STATE.DYING);
       // score só quando isDead && speed <= 0 por DEATH_ZERO_SPEED_MS
