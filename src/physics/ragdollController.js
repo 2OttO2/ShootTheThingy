@@ -109,7 +109,11 @@ export function stepRagdoll(ragdoll, dtNorm = 1) {
     }
   }
 
-  stepBody(ragdoll, dtNorm, { scroll: 0 });
+  // bounce um pouco mais elástico que o padrão do verlet (0.55), pra ficar
+  // mais parecido com o BOUNCE=0.8 usado na física de quando o Player
+  // está vivo (constants/game.js) — só nesta chamada, não mexe no DEFAULTS
+  // global usado por outras coisas.
+  stepBody(ragdoll, dtNorm, { scroll: 0, bounce: 0.7 });
 
   // colisão real com spikes (corpo quica / é empurrado pra fora)
   if (ragdoll.obstacles?.length) {
