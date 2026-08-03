@@ -24,6 +24,13 @@ export const GROUND_HEIGHT = 30;
 export const STALL_DEATH_MS = 3000; // speed 0 por este tempo = morte
 export const DEATH_DELAY_MS = 5000; // espera antes da tela de score (futura animação)
 
+// depois que o Player já morreu (isDead), o jogo só termina quando a
+// speed dele ficar em 0 por este tempo seguido
+export const DEATH_ZERO_SPEED_MS = 2000;
+// multiplicador do decaimento de momentum depois da morte — bem mais
+// agressivo que o 1.8x de antes, pra speed cair rápido e visivelmente
+export const DEATH_MOMENTUM_DECAY_MULTIPLIER = 9;
+
 // =====================
 // ARMAS
 // impact  = força do recoil (empurra o player)
@@ -78,4 +85,3 @@ export const WEAPONS = {
     scoreMultiplier: 5.0,
   },
 };
-

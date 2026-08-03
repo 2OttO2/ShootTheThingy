@@ -37,6 +37,8 @@ import {
   GROUND_HEIGHT,
   STALL_DEATH_MS,
   DEATH_DELAY_MS,
+  DEATH_ZERO_SPEED_MS,
+  DEATH_MOMENTUM_DECAY_MULTIPLIER,
   WEAPONS,
 } from "./constants/game.js";
 
@@ -80,7 +82,9 @@ function App() {
   const [gameState, setGameState] = useState(GAME_STATE.MENU);
   const isDeadRef = useRef(false);
   const playerAngleRef = useRef(0); // radianos — hitbox acompanha rotação
-  const zeroSpeedTimer = useRef(0); // ms acumulados com speed 0
+  const zeroSpeedTimer = useRef(0); // ms acumulados com speed 0 (enquanto vivo — morte por stall)
+  const deathZeroSpeedTimer = useRef(0); // ms acumulados com speed 0 depois de isDead (fim de jogo)
+  const deathFinalizedRef = useRef(false); // garante que o GAME_STATE.DEAD só é setado 1x
   const deathDelayTimeout = useRef(null);
 
   // arma selecionada
@@ -158,10 +162,12 @@ function App() {
     });
   }
 
+  // O ragdoll (Player.jsx) ainda chama isso quando o corpo para de se
+  // mexer visualmente, mas quem decide o fim de jogo agora é só o timer
+  // de "speed <= 0 por DEATH_ZERO_SPEED_MS" no gameLoop — mantido aqui
+  // apenas para não quebrar a prop esperada pelo Player.
   function onBodySettled() {
-    if (settledRef.current) return;
     settledRef.current = true;
-    setGameState(GAME_STATE.DEAD);
   }
 
   function startGame(weaponId) {
@@ -178,6 +184,8 @@ function App() {
     setSelectedWeaponId(weaponId);
     isDeadRef.current = false;
     zeroSpeedTimer.current = 0;
+    deathZeroSpeedTimer.current = 0;
+    deathFinalizedRef.current = false;
     if (deathDelayTimeout.current) {
       clearTimeout(deathDelayTimeout.current);
       deathDelayTimeout.current = null;
@@ -206,6 +214,8 @@ function App() {
     // reinicia com a mesma arma
     isDeadRef.current = false;
     zeroSpeedTimer.current = 0;
+    deathZeroSpeedTimer.current = 0;
+    deathFinalizedRef.current = false;
     if (deathDelayTimeout.current) {
       clearTimeout(deathDelayTimeout.current);
       deathDelayTimeout.current = null;
@@ -254,8 +264,9 @@ function App() {
     const dt = deltaTime / 16.67;
 
     // momentum / speed — decai até zero (também durante DYING)
-    // na morte decai um pouco mais rápido, mas NÃO zera de imediato
-    const decayMul = isDeadRef.current ? 1.8 : 1;
+    // na morte decai bem mais rápido, pra speed cair visivelmente e o
+    // jogo poder terminar logo depois
+    const decayMul = isDeadRef.current ? DEATH_MOMENTUM_DECAY_MULTIPLIER : 1;
     momentum.current -= MOMENTUM_DECAY * decayMul * dt;
     if (momentum.current < 0) {
       momentum.current = 0;
@@ -271,8 +282,24 @@ function App() {
       updateSpikes(dt, gameSpeed.current);
     }
 
-    // durante DYING: HUD/speed decai, mas cenário não arrasta o cadáver
+    // durante DYING: HUD/speed decai, física do ragdoll continua normalmente
+    // (ela roda por conta própria dentro do Player.jsx), mas o cenário não
+    // arrasta mais o cadáver. O jogo só termina quando a speed do Player
+    // ficar em 0 por mais de DEATH_ZERO_SPEED_MS seguidos.
     if (isDeadRef.current) {
+      if (gameSpeed.current <= 0) {
+        deathZeroSpeedTimer.current += deltaTime;
+        if (
+          deathZeroSpeedTimer.current >= DEATH_ZERO_SPEED_MS &&
+          !deathFinalizedRef.current
+        ) {
+          deathFinalizedRef.current = true;
+          setGameState(GAME_STATE.DEAD);
+        }
+      } else {
+        deathZeroSpeedTimer.current = 0;
+      }
+
       animationRef.current = requestAnimationFrame(gameLoop);
       return;
     }
@@ -298,30 +325,53 @@ function App() {
       );
     }
 
-    if (playerY.current <= teto) {
-      const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
-      playerY.current = teto;
-      speed.current *= -BOUNCE;
-      momentum.current *= 1 - BOUNCE_SPEED_LOSS;
-      emitImpact({
-        strength: impactStr,
-        fx: 8 + impactStr * 4,
-        fy: 12 + impactStr * 6,
-        part: "head",
-      });
-    }
+    // OBB rotacionado: ao girar, o corpo “cresce” na vertical →
+    // colide com chão/teto mais cedo (sem flutuar). Em pé = comportamento original.
+    {
+      const ang = playerAngleRef.current || 0;
+      const c = Math.abs(Math.cos(ang));
+      const s = Math.abs(Math.sin(ang));
+      const halfW = 16;
+      const halfH = 28;
+      const extentY = halfW * s + halfH * c;
+      // quanto a rotação adiciona além do em-pé
+      const extra = Math.max(0, extentY - halfH);
 
-    if (playerY.current >= floor) {
-      const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
-      playerY.current = floor;
-      speed.current *= -BOUNCE;
-      momentum.current *= 1 - BOUNCE_SPEED_LOSS;
-      emitImpact({
-        strength: impactStr,
-        fx: 6 + impactStr * 3,
-        fy: -(10 + impactStr * 5),
-        part: "legLeft",
-      });
+      // teto
+      if (playerY.current <= teto + extra) {
+        const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
+        playerY.current = teto + extra;
+        if (speed.current < 0) {
+          speed.current *= -BOUNCE;
+          momentum.current *= 1 - BOUNCE_SPEED_LOSS;
+          emitImpact({
+            strength: impactStr,
+            fx: 8 + impactStr * 4,
+            fy: 12 + impactStr * 6,
+            part: "head",
+          });
+        } else {
+          speed.current = Math.max(0, speed.current);
+        }
+      }
+
+      // chão
+      if (playerY.current >= floor - extra) {
+        const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
+        playerY.current = floor - extra;
+        if (speed.current > 0) {
+          speed.current *= -BOUNCE;
+          momentum.current *= 1 - BOUNCE_SPEED_LOSS;
+          emitImpact({
+            strength: impactStr,
+            fx: 6 + impactStr * 3,
+            fy: -(10 + impactStr * 5),
+            part: "legLeft",
+          });
+        } else {
+          speed.current = Math.min(0, speed.current);
+        }
+      }
     }
 
     // morte por ficar parado (speed 0 por STALL_DEATH_MS)
@@ -338,7 +388,10 @@ function App() {
         setDeathSpike(null);
     setDeathObstacles([]);
         setGameState(GAME_STATE.DYING);
-      // score só quando onBodySettled (corpo parou)
+      // score só quando isDead && speed <= 0 por DEATH_ZERO_SPEED_MS
+
+        // ESSENCIAL: continua o loop — mesmo motivo do fix na colisão com spike
+        animationRef.current = requestAnimationFrame(gameLoop);
         return;
       }
     } else {
@@ -428,8 +481,11 @@ function App() {
       setDeathObstacles([...topBoxes, ...bottomBoxes]);
       setDeathType(event.type);
       setGameState(GAME_STATE.DYING);
-      // score só quando onBodySettled (corpo parou)
+      // score só quando isDead && speed <= 0 por DEATH_ZERO_SPEED_MS
 
+      // ESSENCIAL: continua o loop — sem isso, o gameLoop morre neste
+      // frame e a speed/distância congelam pra sempre no valor da colisão.
+      animationRef.current = requestAnimationFrame(gameLoop);
       return;
     }
 
@@ -460,14 +516,20 @@ function App() {
       if (
         gameState === GAME_STATE.MENU ||
         gameState === GAME_STATE.WEAPON_SELECT ||
-        gameState === GAME_STATE.SCORES ||
-        gameState === GAME_STATE.DYING
+        gameState === GAME_STATE.SCORES
       ) {
         return;
       }
 
       if (gameState === GAME_STATE.DEAD) {
         resetGame();
+        return;
+      }
+
+      // Player já morreu (isDeadRef é setado de forma síncrona no exato
+      // frame da colisão — antes até do gameState==DYING propagar no
+      // próximo render). A partir daqui nenhum disparo é processado.
+      if (isDeadRef.current) {
         return;
       }
 
@@ -651,5 +713,3 @@ function App() {
 }
 
 export default App;
-
-

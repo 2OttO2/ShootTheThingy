@@ -47,14 +47,15 @@ function box(world, x, y, hx, hy, density, userData = null) {
   const body = world.createBody({
     type: "dynamic",
     position: Vec2(x, y),
-    linearDamping: 0.04,
-    angularDamping: 0.22,
+    linearDamping: 0.02,
+    angularDamping: 0.18,
+    allowSleep: false,
   });
   body.createFixture({
     shape: Box(hx, hy),
     density,
-    friction: 0.55,
-    restitution: 0.2,
+    friction: 0.25,
+    restitution: 0.55,
     filter: NO_SELF,
   });
   if (userData) body.setUserData(userData);
@@ -65,14 +66,15 @@ function circle(world, x, y, r, density, userData = null) {
   const body = world.createBody({
     type: "dynamic",
     position: Vec2(x, y),
-    linearDamping: 0.04,
-    angularDamping: 0.28,
+    linearDamping: 0.02,
+    angularDamping: 0.22,
+    allowSleep: false,
   });
   body.createFixture({
     shape: Circle(r),
     density,
-    friction: 0.4,
-    restitution: 0.15,
+    friction: 0.2,
+    restitution: 0.5,
     filter: NO_SELF,
   });
   if (userData) body.setUserData(userData);
@@ -387,11 +389,17 @@ export function createRagdoll(x, y, opts = {}) {
   const ground = world.createBody();
   ground.createFixture({
     shape: Edge(Vec2(-4000, floorY), Vec2(4000, floorY)),
-    friction: 0.7,
-    restitution: 0.5,
+    friction: 0.45,
+    restitution: 0.7,
   });
   ground.setUserData({ kind: "floor" });
-  world.createBody().createFixture(Edge(Vec2(-4000, ceilingY), Vec2(4000, ceilingY)));
+  const ceiling = world.createBody();
+  ceiling.createFixture({
+    shape: Edge(Vec2(-4000, ceilingY), Vec2(4000, ceilingY)),
+    friction: 0.25,
+    restitution: 0.65,
+  });
+  ceiling.setUserData({ kind: "ceiling" });
   const maxX = typeof window !== "undefined" ? window.innerWidth - 16 : 900;
   world.createBody().createFixture(Edge(Vec2(16, -200), Vec2(16, floorY + 50)));
   world.createBody().createFixture(Edge(Vec2(maxX, -200), Vec2(maxX, floorY + 50)));
@@ -650,18 +658,18 @@ function applyFloorKick(ragdoll) {
   if (ragdoll.floorKicked || ragdoll.secondaryImpale) return;
   const { hip, chest, head, lFoot, rFoot, lHand, rHand } = ragdoll.bodies;
   const hv = hip.getLinearVelocity();
-  // só kick se estava caindo com força (impacto de queda)
-  if (hv.y < 80) return;
+  // aceita vy positivo (caindo) ou já refletido (bounce acabou de inverter)
+  if (Math.abs(hv.y) < 80) return;
 
   ragdoll.floorKicked = true;
-  // kick pro alto e pra DIREITA
-  impulse(hip, 50, -140);
-  impulse(chest, 35, -80);
-  impulse(head, 20, -50);
-  if (lFoot) impulse(lFoot, 40, -60);
-  if (rFoot) impulse(rFoot, 55, -65);
-  if (lHand) impulse(lHand, 25, -20);
-  if (rHand) impulse(rHand, 40, -20);
+  // kick pro alto e pra DIREITA (direção oposta à queda)
+  impulse(hip, 55, -160);
+  impulse(chest, 40, -95);
+  impulse(head, 25, -55);
+  if (lFoot) impulse(lFoot, 45, -70);
+  if (rFoot) impulse(rFoot, 60, -75);
+  if (lHand) impulse(lHand, 30, -25);
+  if (rHand) impulse(rHand, 45, -25);
 
   if (typeof ragdoll.onBlood === "function") {
     const p = hip.getPosition();
@@ -722,13 +730,44 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
     }
   }
 
-  // chão: só física (restitution do fixture) — kick leve se impacto alto
-  if (!ragdoll.floorKicked) {
-    const hip = ragdoll.bodies.hip;
-    const py = hip.getPosition().y;
-    const vy = hip.getLinearVelocity().y;
-    if (py >= ragdoll.floorY - 18 && vy > 120) {
-      applyFloorKick(ragdoll);
+  // Bounce explícito no chão/teto — restitution sozinha não basta
+  // (fricção + vários contatos matam a energia). Reflete vy com retenção.
+  {
+    const floorY = ragdoll.floorY;
+    const ceilingY = 8;
+    const BOUNCE_KEEP = 0.72;
+    const MIN_IMPACT = 40;
+    const parts = Object.values(ragdoll.bodies).filter(Boolean);
+
+    for (const b of parts) {
+      const p = b.getPosition();
+      const v = b.getLinearVelocity();
+      // chão
+      if (p.y >= floorY - 14 && v.y > MIN_IMPACT) {
+        b.setLinearVelocity(Vec2(v.x * 0.92, -v.y * BOUNCE_KEEP));
+        b.setAwake(true);
+        if (p.y > floorY - 6) {
+          b.setTransform(Vec2(p.x, floorY - 8), b.getAngle());
+        }
+      }
+      // teto
+      if (p.y <= ceilingY + 14 && v.y < -MIN_IMPACT) {
+        b.setLinearVelocity(Vec2(v.x * 0.92, -v.y * BOUNCE_KEEP));
+        b.setAwake(true);
+        if (p.y < ceilingY + 6) {
+          b.setTransform(Vec2(p.x, ceilingY + 8), b.getAngle());
+        }
+      }
+    }
+
+    // kick extra no primeiro impacto forte no chão
+    if (!ragdoll.floorKicked) {
+      const hip = ragdoll.bodies.hip;
+      const py = hip.getPosition().y;
+      const vy = hip.getLinearVelocity().y;
+      if (py >= floorY - 18 && Math.abs(vy) > 100) {
+        applyFloorKick(ragdoll);
+      }
     }
   }
 }
@@ -766,4 +805,3 @@ export function angleBetween(a, b) {
 export function dist(a, b) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
-

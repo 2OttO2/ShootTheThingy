@@ -8,8 +8,8 @@ export const DEFAULTS = {
   gravity: 0.52,
   damping: 0.99,
   iterations: 5,
-  floorFriction: 0.5,
-  bounce: 0.2,
+  floorFriction: 0.45,
+  bounce: 0.55,
   maxV: 9,
   maxStretch: 1.35, // acima disso o osso "trava"
 };
@@ -110,7 +110,12 @@ export function collideWorld(p, floorY, ceilingY, opts = {}) {
   }
   if (p.y < ceilingY) {
     p.y = ceilingY;
-    p.oy = p.y;
+    const vx = p.x - p.ox;
+    p.ox = p.x - vx * (1 - friction * 0.5);
+    const vy = p.y - p.oy;
+    // vy < 0 = subindo e bateu no teto → inverte (bounce)
+    if (vy < 0) p.oy = p.y + vy * bounce;
+    else p.oy = p.y;
   }
   const maxX =
     opts.maxX ??
@@ -165,4 +170,3 @@ export function angleBetween(a, b) {
 export function dist(a, b) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
-
