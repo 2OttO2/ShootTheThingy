@@ -1,33 +1,29 @@
-# Arquitetura (morte / física)
+# Arquitetura — colisão e física
 
-## Pastas
-
-| Pasta | Responsabilidade |
-|-------|------------------|
-| `core/` | Estados do jogo (`GAME_STATE`) |
-| `death/` | Tipos, classificação, behaviors (pose/impulsos) |
-| `physics/` | Verlet puro, body factory, ragdoll controller |
-| `utils/ragdoll.js` | **Facade** — Player importa daqui (não quebra) |
-| `utils/collision.js` | Hitboxes → contact info (sem tipo de morte) |
-
-## Fluxo
+## Pipeline de colisão
 
 ```
-PLAYING: colisão → classifyDeath() → DeathEvent
-DYING:   createRagdoll(opts) → applyDeathBehavior + verlet step
-DEAD:    GameOver
+processSpikeFrame()                    systems/spikeCollision.js
+  ├─ buildPlayerObb()
+  ├─ querySpikeHits()                  hitboxes + cull + quadtree + overlap
+  ├─ resolveSpikeContacts()            utils/collision.js
+  │    ├─ analyzeContact()             feature, normal, penetração, bodyPart
+  │    ├─ classifyKind()               impale_core | impale_limb | bounce
+  │    └─ computeImpulseY()            reflexão vy (e=0.78)
+  └─ planSpikeResponse()               ResponsePlan (comandos puros)
+       └─ App só aplica o plan
 ```
 
-## Onde mudar o quê
+## Responsabilidades
 
-- **Regra hang vs impale** → `death/classify.js`
-- **Timer do hang, impulsos** → `death/behaviors.js`
-- **Gravidade / damping** → `physics/verlet.js`
-- **Formato do bonequinho** → `physics/bodyFactory.js`
-- **Loop de morte (scroll, pin contínuo)** → `physics/ragdollController.js`
+| Módulo | Faz |
+|--------|-----|
+| `utils/collision.js` | Geometria OBB×triângulo, feature, normal, kind |
+| `systems/spikeCollision.js` | Query + plano de resposta (impale/bounce/pin) |
+| `App.jsx` | Aplica plan (vy, pin, sever, momentum) |
+| `physics/livingRagdoll.js` | Física única do personagem + pins |
 
-## Próximos passos (ainda não feitos)
+## ResponsePlan
 
-1. `combat/damage.js` — extrair sistema de membros do Player
-2. `PlayerAlive.jsx` / `PlayerDead.jsx` — split do render
-3. Loop DYING no App sem matar o RAF dos spikes
+Campos principais: `velocityY`, `playerY`, `corePinned`, `pin`, `impact`,
+`severLimb`, `stuckLimb`, `momentumMul`, `separateY`, `cooldownMs`, `noShoot`.

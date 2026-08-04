@@ -14,11 +14,12 @@ import BloodLayer from "./components/Blood/BloodLayer.jsx";
 
 import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
-import { findAllSpikeCollisionsQuad } from "./utils/collision.js";
-import { buildSpikeQuadTree } from "./utils/quadtree.js";
-import { cullSpikeHitboxes } from "./utils/spatialHash.js";
-import { classifyDeath, classifyStall, DeathType } from "./death/index.js";
+import { classifyStall } from "./death/index.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
+import {
+  processSpikeFrame,
+  applyMomentumMul,
+} from "./systems/spikeCollision.js";
 
 import {
   BASE_GAME_SPEED,
@@ -499,208 +500,61 @@ function App() {
       }
     }
 
-    // colisão — OBB centrado no corpo, rotacionado com o ragdoll vivo
-    const pCx = 300 + 24;
-    const pCy = playerY.current + 32;
-    const player = {
-      x: pCx - 16,
-      y: pCy - 28,
-      width: 32,
-      height: 56,
-      cx: pCx,
-      cy: pCy,
-      angle: playerAngleRef.current, // radianos
-    };
-
-    const topBoxes = createSpikeHitboxes(spikesRef.current.top, "top");
-    const bottomBoxes = createSpikeHitboxes(spikesRef.current.bottom, "bottom");
-    // 1) culling: fora da tela / longe do player
-    // 2) quadtree: broadphase espacial
-    // 3) OBB fino só nos candidatos
-    const rawBoxes =
-      topBoxes.length || bottomBoxes.length
-        ? [...topBoxes, ...bottomBoxes]
-        : [];
-    const allBoxes = cullSpikeHitboxes(rawBoxes, {
-      focusX: pCx,
-      focusY: pCy,
-      focusRadius: 260,
-      margin: 64,
-    });
-    const spikeTree = buildSpikeQuadTree(allBoxes);
-    const hits = findAllSpikeCollisionsQuad(player, spikeTree);
-    const hitTop = hits.find((h) => h.side === "top") || null;
-    const hitBottom = hits.find((h) => h.side === "bottom") || null;
-
+    // ─── Colisão spikes (pipeline: query → resolve → plan → apply) ───
     if (spikeHitCooldown.current > 0) {
       spikeHitCooldown.current -= deltaTime;
     }
 
-    // já impalado no núcleo: não reprocessa colisão (evita spam de pin)
-    if (corePinnedRef.current) {
-      speed.current = 0;
-    } else if ((hitTop || hitBottom) && spikeHitCooldown.current <= 0) {
-      const event = classifyDeath(hitTop, hitBottom, {
-        velocityY: speed.current,
-        playerX: player.x,
-        playerY: player.y,
-        playerW: player.width,
-        playerH: player.height,
-      });
+    const { plan: spikePlan } = processSpikeFrame({
+      playerX: 300,
+      playerY: playerY.current,
+      angle: playerAngleRef.current,
+      velocityY: speed.current,
+      spikesRef: spikesRef.current,
+      corePinned: corePinnedRef.current,
+      cooldownRemaining: spikeHitCooldown.current,
+    });
 
-      const part = event.bodyPart || "torso";
-      const tip = event.tip || { x: player.cx, y: player.cy };
-      const onTip = event.region === "tip" || event.face === "tip";
-      const isTop = (event.side || (hitTop ? "top" : "bottom")) === "top";
-      const isBottom = !isTop;
-      const absVy = Math.abs(speed.current);
-
-      // qualquer toque no spike: sem tiro
-      noShootRef.current = true;
-      setGameState(GAME_STATE.DYING);
-      spikeHitCooldown.current = onTip ? 400 : 220;
-
-      // —— PONTA + NÚCLEO (cabeça / torso) ——
-      const coreHit =
-        onTip &&
-        (part === "head" || part === "torso") &&
-        (event.type === DeathType.IMPALE ||
-          event.type === DeathType.HANG ||
-          event.type === "spike_impale" ||
-          event.type === "spike_hang" ||
-          part === "head" ||
-          part === "torso");
-
-      if (coreHit) {
-        if (isTop) {
-          // TETO: prende um instante e CAI
-          corePinnedRef.current = false;
-          const pinY = tip.y;
-          // peito/cabeça sob o tip, X no centro do player (estável na tela)
-          emitPin({
-            part: part === "head" ? "head" : "chest",
-            x: player.cx,
-            y: pinY,
-            side: "top",
-            isCore: true,
-            releaseAfterMs: 220,
-          });
-          emitImpact({
-            strength: 2.4 + Math.min(1.5, absVy * 0.08),
-            fx: (event.offsetX || 0) * 0.25,
-            fy: 18,
-            part: part === "head" ? "head" : "chest",
-          });
-          // empurra pra baixo e reduz speed
-          speed.current = Math.max(4, Math.abs(speed.current) * 0.55 + 3);
-          momentum.current *= 0.82;
-        } else {
-          // CHÃO: fica IMPALADO — pin no centro da tela, Y na ponta
-          corePinnedRef.current = true;
-          const pinPartName = part === "head" ? "head" : "chest";
-          // chest local em livingRagdoll: cy = playerY + 32
-          // pin no tip → playerY ≈ tip.y - 32 (peito) ou tip.y - 12 (cabeça)
-          const pinY = tip.y + (part === "head" ? 4 : 10);
-          playerY.current =
-            part === "head" ? tip.y - 14 : tip.y - 32;
-          speed.current = 0;
-          emitPin({
-            part: pinPartName,
-            x: player.cx + Math.max(-10, Math.min(10, event.offsetX || 0)),
-            y: pinY,
-            side: "bottom",
-            isCore: true,
-            releaseAfterMs: null,
-          });
-          emitImpact({
-            strength: 3.2 + Math.min(1.2, absVy * 0.06),
-            fx: (event.offsetX || 0) * 0.35,
-            fy: -6,
-            part: pinPartName,
-          });
-          momentum.current *= 0.65;
-        }
-        gameSpeed.current = Math.min(momentum.current, MAX_GAME_SPEED);
+    if (spikePlan.handled) {
+      if (spikePlan.noShoot) {
+        noShootRef.current = true;
+        setGameState(GAME_STATE.DYING);
+      }
+      if (spikePlan.cooldownMs > 0) {
+        spikeHitCooldown.current = spikePlan.cooldownMs;
+      }
+      if (spikePlan.corePinned != null) {
+        corePinnedRef.current = spikePlan.corePinned;
+      }
+      if (spikePlan.separateY) {
+        playerY.current += spikePlan.separateY;
+      }
+      if (spikePlan.playerY != null) {
+        playerY.current = spikePlan.playerY;
+      }
+      if (spikePlan.velocityY != null) {
+        speed.current = spikePlan.velocityY;
+      }
+      if (spikePlan.momentumMul !== 1) {
+        const m = applyMomentumMul(momentum.current, spikePlan.momentumMul);
+        momentum.current = m.momentum;
+        gameSpeed.current = m.gameSpeed;
         setDisplaySpeed(gameSpeed.current);
-      } else if (
-        onTip &&
-        (part === "legs" ||
-          part === "arms" ||
-          event.type === DeathType.IMPALE_LEG ||
-          event.type === "spike_impale_leg")
-      ) {
-        // —— MEMBRO na ponta: corta, perde speed, bounce — SEM pin no esqueleto vivo
-        //    (pin em membro controlado esticava o corpo)
-        momentum.current *= 0.86;
-        gameSpeed.current = Math.min(momentum.current, MAX_GAME_SPEED);
-        setDisplaySpeed(gameSpeed.current);
-
-        let limbKey =
-          part === "arms"
-            ? (event.offsetX || 0) < 0
-              ? "armLeft"
-              : "armRight"
-            : (event.offsetX || 0) < 0
-              ? "legLeft"
-              : "legRight";
-
-        setExternalSever((prev) => {
-          if (prev[limbKey]) return prev;
-          return { ...prev, [limbKey]: true };
-        });
-
-        // membro visual preso no tip (rola com o mapa) — só sprite solto
+      }
+      if (spikePlan.pin) emitPin(spikePlan.pin);
+      if (spikePlan.impact) emitImpact(spikePlan.impact);
+      if (spikePlan.severLimb) {
+        const limbKey = spikePlan.severLimb;
+        setExternalSever((prev) =>
+          prev[limbKey] ? prev : { ...prev, [limbKey]: true }
+        );
+      }
+      if (spikePlan.stuckLimb) {
         stuckLimbsRef.current = [
           ...stuckLimbsRef.current,
-          {
-            id: `${limbKey}-${Date.now()}`,
-            limb: limbKey,
-            x: tip.x,
-            y: tip.y,
-          },
+          spikePlan.stuckLimb,
         ];
         setStuckLimbs(stuckLimbsRef.current);
-
-        // rebote vertical + impulso no membro
-        if (isBottom && speed.current > 0) {
-          speed.current *= -BOUNCE * 0.9;
-        } else if (isTop && speed.current < 0) {
-          speed.current *= -BOUNCE * 0.9;
-        } else {
-          speed.current += isBottom ? -6 : 6;
-        }
-        emitImpact({
-          strength: 2.8,
-          fx: (event.offsetX || 0) >= 0 ? 14 : -14,
-          fy: isBottom ? -18 : 16,
-          part: limbKey,
-        });
-      } else {
-        // —— BASE / FLANCO: empurra pra longe do spike + freia
-        momentum.current *= 0.9;
-        gameSpeed.current = Math.min(momentum.current, MAX_GAME_SPEED);
-        setDisplaySpeed(gameSpeed.current);
-
-        const awayX =
-          Math.abs(event.offsetX || 0) > 4
-            ? Math.sign(event.offsetX) * 10
-            : speed.current > 0
-              ? 6
-              : -6;
-        // bounce vertical como no chão/teto
-        if (isBottom && speed.current > 1) {
-          speed.current *= -BOUNCE * 0.85;
-        } else if (isTop && speed.current < -1) {
-          speed.current *= -BOUNCE * 0.85;
-        } else {
-          speed.current += isBottom ? -5 : 5;
-        }
-        emitImpact({
-          strength: 1.8 + Math.min(1, absVy * 0.05),
-          fx: awayX,
-          fy: isBottom ? -10 : 12,
-          part: part === "head" ? "head" : part === "legs" ? "legLeft" : "chest",
-        });
       }
     }
 

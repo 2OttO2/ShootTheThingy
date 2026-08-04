@@ -293,7 +293,8 @@ export function stepLivingRagdoll(
     body.controlBlend = 0;
   }
 
-  body.omega *= Math.pow(0.978, dt * 60);
+  // quando impalado, amortece menos o spin → corpo balança no pin
+  body.omega *= Math.pow(corePinned ? 0.992 : 0.978, dt * 60);
   body.angle += body.omega * dt;
 
   const cx = x + 24;
@@ -361,7 +362,8 @@ export function stepLivingRagdoll(
   place("rShoulder", false, 0.26);
 
   const fall = velocityY * 0.1 * dt * 60;
-  const gravityMul = controlled ? 0.18 : 0.55;
+  // impalado: gravidade cheia nos membros livres (pendura de verdade)
+  const gravityMul = controlled ? 0.18 : corePinned ? 0.72 : 0.55;
   for (const name of [
     "lHand",
     "rHand",
@@ -395,7 +397,8 @@ export function stepLivingRagdoll(
     place(name, false, controlled ? 0.14 : 0.02);
   }
 
-  for (let i = 0; i < 4; i++) {
+  const iters = corePinned ? 6 : 4;
+  for (let i = 0; i < iters; i++) {
     // re-aplica pins antes das constraints
     for (const key of Object.keys(body.externalPins || {})) {
       const pin = body.externalPins[key];
