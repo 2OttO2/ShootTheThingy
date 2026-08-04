@@ -309,17 +309,9 @@ function App() {
     setDistance(Math.floor(distanceRef.current));
     setDisplaySpeed(gameSpeed.current);
 
-    // VIVO: spikes rolam. MORTO (mas não preso num espeto): spikes
-    // continuam rolando enquanto ainda houver speed, só param quando ela
-    // chegar a 0. MORTO E PRESO num espeto (hang/impale): fica parado,
-    // senão o corpo preso desalinha visualmente do espeto que o segura.
-    const pinnedDeath =
-      isDeadRef.current &&
-      (deathTypeRef.current === DeathType.HANG ||
-        deathTypeRef.current === DeathType.IMPALE ||
-        deathTypeRef.current === DeathType.IMPALE_LEG);
-
-    if (!pinnedDeath && (!isDeadRef.current || gameSpeed.current > 0)) {
+    // Spikes rolam sempre que houver speed — vivo ou morto. Só param
+    // quando gameSpeed.current chega a 0.
+    if (gameSpeed.current > 0) {
       updateSpikes(dt, gameSpeed.current);
     }
 
