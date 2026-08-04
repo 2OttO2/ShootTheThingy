@@ -538,7 +538,7 @@ function Player({
       return;
     }
 
-    const floorY = window.innerHeight - 8;
+    const floorY = window.innerHeight - 40;
     const ceilingY = 5;
 
     const L = limbsRef.current;
@@ -1126,5 +1126,6 @@ function Player({
 }
 
 export default Player;
+
 
 

@@ -22,7 +22,7 @@ Settings.maxTranslationSquared = 25 * 25;
 Settings.maxRotation = 0.85 * Math.PI;
 Settings.maxRotationSquared = (0.85 * Math.PI) ** 2;
 
-const GRAVITY = 520;
+const GRAVITY = 1500;
 const VEL_ITERS = 10;
 const POS_ITERS = 4;
 const NO_SELF = { groupIndex: -1 };
@@ -365,7 +365,7 @@ function setupContacts(ragdoll) {
 export function createRagdoll(x, y, opts = {}) {
   const floorY =
     opts.floorY ??
-    (typeof window !== "undefined" ? window.innerHeight - 10 : 600);
+    (typeof window !== "undefined" ? window.innerHeight - 40 : 560);
   const ceilingY = opts.ceilingY ?? 5;
 
   const deathType = opts.deathType ?? opts.event?.type ?? DeathType.STALL;
@@ -805,3 +805,4 @@ export function angleBetween(a, b) {
 export function dist(a, b) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
+
