@@ -1,14 +1,17 @@
 /**
- * Sistema contínuo de ossos (vivo + transição pra morte).
+ * Física ÚNICA do personagem (vivo + morte).
  *
- * VIVO: raiz (peito) segue o controle arcade; membros são físicos
- *       e reagem a impactos proporcionais — depois recuperam pose.
- * IMPACTO: applyBoneImpact aplica força no ponto/parte.
- * MORTO: releaseBones() solta a raiz; física assume (ou handoff Planck).
+ * - VIVO: raiz (peito) segue o controle arcade; membros reagem a impactos
+ *         e recuperam pose.
+ * - IMPACTO: applyBoneImpact aplica força no ponto/parte.
+ * - IMPALE: pinPart() fixa um osso no tip do spike (membro ou núcleo).
+ * - MORTO / solto: releaseBones() ou pin de núcleo → controlBlend = 0.
+ *
+ * Não há handoff para outro sistema de física.
  */
 
 function pt(x, y) {
-  return { x, y, ox: x, oy: y, fx: 0, fy: 0 };
+  return { x, y, ox: x, oy: y, fx: 0, fy: 0, pin: false };
 }
 
 function dist(a, b) {
@@ -35,6 +38,26 @@ function constrain(s) {
     s.b.y += oy;
   }
 }
+
+const PART_MAP = {
+  head: "head",
+  chest: "chest",
+  torso: "chest",
+  hip: "hip",
+  groin: "hip",
+  armLeft: "lHand",
+  armRight: "rHand",
+  legLeft: "lFoot",
+  legRight: "rFoot",
+  lHand: "lHand",
+  rHand: "rHand",
+  lFoot: "lFoot",
+  rFoot: "rFoot",
+  lShoulder: "lShoulder",
+  rShoulder: "rShoulder",
+  lKnee: "lKnee",
+  rKnee: "rKnee",
+};
 
 export function createLivingRagdoll(x, y, severed = {}) {
   const cx = x + 24;
@@ -103,17 +126,85 @@ export function createLivingRagdoll(x, y, severed = {}) {
     severed: sev,
     angle: 0,
     omega: 0,
-    /** vivo: raiz pinada + recuperação; morto: solto */
+    /** vivo: raiz pinada + recuperação; morto / núcleo impalado: solto */
     controlled: true,
     /** 0..1 quanto a pose de controle manda vs física livre */
     controlBlend: 1,
+    /** pins externos (impale): { partKey: { x, y, side, isCore } } */
+    externalPins: {},
   };
 }
 
 /**
+ * Fixa um osso no tip do spike.
+ * partName: "head" | "chest" | "torso" | "legLeft" | ...
+ * isCore: true → solta o controle arcade (corpo fica pendurado).
+ */
+export function pinPart(body, partName, x, y, opts = {}) {
+  if (!body?.parts) return;
+  const key = PART_MAP[partName] || partName;
+  const p = body.parts[key];
+  if (!p) return;
+
+  p.pin = true;
+  p.x = x;
+  p.y = y;
+  p.ox = x;
+  p.oy = y;
+
+  body.externalPins[key] = {
+    x,
+    y,
+    side: opts.side || "bottom",
+    isCore: !!opts.isCore,
+    /** pin de núcleo fica fixo na tela (player não rola com o mapa) */
+    screenFixed: opts.screenFixed != null ? !!opts.screenFixed : !!opts.isCore,
+    partName,
+  };
+
+  if (opts.isCore) {
+    body.controlled = false;
+    body.controlBlend = 0;
+    if (body.parts.chest && key !== "chest") {
+      body.parts.chest.pin = false;
+    }
+  }
+}
+
+/** Remove pin de um osso. */
+export function unpinPart(body, partName) {
+  if (!body?.parts) return;
+  const key = PART_MAP[partName] || partName;
+  const p = body.parts[key];
+  if (p) p.pin = false;
+  delete body.externalPins[key];
+}
+
+/** Move pins que acompanham o mapa (não move screenFixed / núcleo). */
+export function shiftPins(body, dx) {
+  if (!body?.externalPins) return;
+  for (const key of Object.keys(body.externalPins)) {
+    const pin = body.externalPins[key];
+    if (pin.screenFixed || pin.isCore) continue;
+    pin.x += dx;
+    const p = body.parts[key];
+    if (p) {
+      p.x = pin.x;
+      p.y = pin.y;
+      p.ox = pin.x;
+      p.oy = pin.y;
+    }
+  }
+}
+
+/** Tem pin de núcleo (cabeça/peito)? */
+export function hasCorePin(body) {
+  if (!body?.externalPins) return false;
+  return Object.values(body.externalPins).some((p) => p.isCore);
+}
+
+/**
  * Impacto contínuo (vivo ou morto).
- * @param {object} body
- * @param {{ part?: string, fx: number, fy: number, strength?: number }} impact
  */
 export function applyBoneImpact(body, impact = {}) {
   if (!body?.parts) return;
@@ -138,29 +229,26 @@ export function applyBoneImpact(body, impact = {}) {
     rFoot: body.parts.rFoot,
   };
   const target = map[partName] || body.parts.chest;
-  if (!target) return;
+  if (!target || target.pin) return;
 
-  // velocidade verlet (ox/oy)
   target.x += fx * 0.08;
   target.y += fy * 0.08;
   target.ox -= fx * 0.12;
   target.oy -= fy * 0.12;
 
-  // torque no tronco proporcional ao offset horizontal do hit
   const chest = body.parts.chest;
-  if (chest) {
+  if (chest && !chest.pin) {
     const lever = (target.x - chest.x) / 40;
     body.omega += lever * strength * 0.35 + (fx > 0 ? 0.15 : -0.08) * strength;
   }
 
-  // impactos fortes afrouxam o controle temporariamente
   if (body.controlled) {
     const loosen = Math.min(0.75, strength * 0.12);
     body.controlBlend = Math.max(0.25, (body.controlBlend ?? 1) - loosen);
   }
 }
 
-/** Solta a raiz — física assume (antes do handoff Planck ou ragdoll livre). */
+/** Solta a raiz — física assume. */
 export function releaseBones(body) {
   if (!body) return;
   body.controlled = false;
@@ -194,10 +282,10 @@ export function stepLivingRagdoll(
 
   const dt = Math.min(dtSec, 0.033);
   const { parts } = body;
-  const controlled = body.controlled !== false;
+  const corePinned = hasCorePin(body);
+  const controlled = body.controlled !== false && !corePinned;
   let blend = body.controlBlend ?? 1;
   if (controlled) {
-    // recuperação gradual do controle após impacto
     blend = Math.min(1, blend + dt * 1.8);
     body.controlBlend = blend;
   } else {
@@ -227,9 +315,23 @@ export function stepLivingRagdoll(
     rFoot: [10, 52],
   };
 
+  // aplica pins externos (impale)
+  for (const key of Object.keys(body.externalPins || {})) {
+    const pin = body.externalPins[key];
+    const p = parts[key];
+    if (!p) continue;
+    p.x = pin.x;
+    p.y = pin.y;
+    p.ox = pin.x;
+    p.oy = pin.y;
+    p.pin = true;
+  }
+
   function place(name, pin, follow = 0.22) {
     const p = parts[name];
     if (!p) return;
+    // pin externo manda
+    if (body.externalPins?.[name]) return;
     const [lx, ly] = local[name];
     const wx = cx + lx * cos - ly * sin;
     const wy = cy + lx * sin + ly * cos;
@@ -242,7 +344,6 @@ export function stepLivingRagdoll(
       return;
     }
     p.pin = false;
-    // follow escalado pelo blend de controle
     const f = follow * blend;
     if (f > 0.001) {
       p.x += (wx - p.x) * f;
@@ -250,13 +351,17 @@ export function stepLivingRagdoll(
     }
   }
 
-  place("chest", true);
+  // se núcleo está pinado, não força o peito pro arcade
+  if (!corePinned) {
+    place("chest", true);
+  }
   place("head", false, 0.28);
   place("hip", false, 0.28);
   place("lShoulder", false, 0.26);
   place("rShoulder", false, 0.26);
 
   const fall = velocityY * 0.1 * dt * 60;
+  const gravityMul = controlled ? 0.18 : 0.55;
   for (const name of [
     "lHand",
     "rHand",
@@ -266,11 +371,13 @@ export function stepLivingRagdoll(
     "rFoot",
     "head",
     "hip",
+    "chest",
   ]) {
     const p = parts[name];
     if (!p || p.pin) continue;
+    if (body.externalPins?.[name]) continue;
     const vx = (p.x - p.ox) * 0.94;
-    const vy = (p.y - p.oy) * 0.94 + fall * 0.02 + (controlled ? 0.18 : 0.45) * dt * 60;
+    const vy = (p.y - p.oy) * 0.94 + fall * 0.02 + gravityMul * dt * 60;
     p.ox = p.x;
     p.oy = p.y;
     p.x += vx;
@@ -280,6 +387,7 @@ export function stepLivingRagdoll(
   for (const name of ["lHand", "rHand", "lKnee", "rKnee", "lFoot", "rFoot"]) {
     const p = parts[name];
     if (!p) continue;
+    if (body.externalPins?.[name]) continue;
     if (body.severed.armLeft && name === "lHand") continue;
     if (body.severed.armRight && name === "rHand") continue;
     if (body.severed.legLeft && (name === "lKnee" || name === "lFoot")) continue;
@@ -288,6 +396,17 @@ export function stepLivingRagdoll(
   }
 
   for (let i = 0; i < 4; i++) {
+    // re-aplica pins antes das constraints
+    for (const key of Object.keys(body.externalPins || {})) {
+      const pin = body.externalPins[key];
+      const p = parts[key];
+      if (!p) continue;
+      p.x = pin.x;
+      p.y = pin.y;
+      p.ox = pin.x;
+      p.oy = pin.y;
+      p.pin = true;
+    }
     for (const s of body.sticks) {
       const sev = body.severed;
       if (sev.armLeft && (s.a === parts.lHand || s.b === parts.lHand)) continue;
@@ -310,7 +429,7 @@ export function stepLivingRagdoll(
         continue;
       constrain(s);
     }
-    if (controlled) place("chest", true);
+    if (controlled && !corePinned) place("chest", true);
   }
 }
 
@@ -344,10 +463,11 @@ export function livingSnapshot(body) {
       : { x: p.hip.x + 10, y: p.hip.y + 28 },
     severed: { ...sev },
     controlBlend: body.controlBlend,
+    hasCorePin: hasCorePin(body),
   };
 }
 
-/** Energia cinética aproximada dos ossos (pra debug / settle vivo). */
+/** Energia cinética aproximada dos ossos. */
 export function bonesKinetic(body) {
   if (!body?.parts) return 0;
   let e = Math.abs(body.omega) * 10;
@@ -359,4 +479,3 @@ export function bonesKinetic(body) {
   }
   return e;
 }
-
