@@ -341,6 +341,7 @@ function Player({
   const velocityRef = useRef(velocityY);
   const moveSpeedRef = useRef(moveSpeed);
   const drawYRef = useRef(drawY);
+  const obstaclesRef = useRef(deathObstacles); // hitboxes atuais dos spikes, atualiza sem recriar o ragdoll
   const ragdollRef = useRef(null);
   const ragdollRaf = useRef(null);
   const lastRafTime = useRef(0);
@@ -351,6 +352,7 @@ function Player({
   velocityRef.current = velocityY;
   moveSpeedRef.current = moveSpeed;
   drawYRef.current = drawY;
+  obstaclesRef.current = deathObstacles;
   limbsRef.current = limbs;
   vitalRef.current = vitalIndex;
   woundsRef.current = wounds;
@@ -538,7 +540,7 @@ function Player({
       return;
     }
 
-    const floorY = window.innerHeight - 40;
+    const floorY = window.innerHeight - 8;
     const ceilingY = 5;
 
     const L = limbsRef.current;
@@ -571,7 +573,7 @@ function Player({
       impact: deathSpike?.impact ?? 1,
       bodyPart: deathSpike?.bodyPart ?? "torso",
       region: deathSpike?.region ?? "tip",
-      obstacles: deathObstacles ?? [],
+      obstacles: obstaclesRef.current ?? [],
       onBlood: ({ x, y, count = 8, power = 1 }) => {
         bloodRef?.current?.burst({
           x,
@@ -606,6 +608,12 @@ function Player({
       lastRafTime.current = time;
       const dtNorm = dt / 16.67;
 
+      // spikes continuam andando depois da morte — mantém a colisão do
+      // ragdoll sempre com a posição ATUAL deles, sem recriar o corpo
+      // inteiro (evitaria resetar pose/velocidade a cada frame).
+      if (ragdollRef.current) {
+        ragdollRef.current.obstacles = obstaclesRef.current;
+      }
       stepRagdoll(ragdollRef.current, dtNorm, moveSpeedRef.current);
       setRagdollPose(ragdollSnapshot(ragdollRef.current));
       ragdollRaf.current = requestAnimationFrame(loop);
@@ -618,7 +626,7 @@ function Player({
         ragdollRaf.current = null;
       }
     };
-  }, [deathType, playerX, deathSpike, deathObstacles]);
+  }, [deathType, playerX, deathSpike]);
 
   useEffect(() => {
     if (deathType === "none" && shotTick === 0) {
@@ -1126,6 +1134,5 @@ function Player({
 }
 
 export default Player;
-
 
 

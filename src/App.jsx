@@ -315,16 +315,39 @@ function App() {
       updateSpikes(dt, gameSpeed.current);
     }
 
-    // hitboxes de debug sempre acompanham a posição atual dos spikes,
-    // vivo ou morto — senão desalinham do desenho quando o mapa
-    // continua andando depois da morte.
-    setDebugHitboxes([
+    // hitboxes de debug (e as usadas na colisão do corpo morto com os
+    // spikes) sempre acompanham a posição atual deles, vivo ou morto —
+    // senão desalinham quando o mapa continua andando depois da morte.
+    const currentSpikeHitboxes = [
       ...createSpikeHitboxes(spikesRef.current.top, "top"),
       ...createSpikeHitboxes(spikesRef.current.bottom, "bottom"),
-    ]);
+    ];
+    setDebugHitboxes(currentSpikeHitboxes);
+    if (isDeadRef.current) {
+      setDeathObstacles(currentSpikeHitboxes);
+    }
 
-    // DYING: sem tiro (keyDown). Física/bounce/spikes CONTINUAM abaixo.
-    // Fim da partida só quando speed<=0 por DEATH_ZERO_SPEED_MS (checado no fim do frame).
+    // durante DYING: a ÚNICA coisa que muda é o Player não poder mais
+    // atirar (bloqueado no keyDown via isDeadRef). Física/HUD/spikes
+    // seguem tocando normalmente. O jogo só termina quando a speed
+    // ficar em 0 por mais de DEATH_ZERO_SPEED_MS seguidos.
+    if (isDeadRef.current) {
+      if (gameSpeed.current <= 0) {
+        deathZeroSpeedTimer.current += deltaTime;
+        if (
+          deathZeroSpeedTimer.current >= DEATH_ZERO_SPEED_MS &&
+          !deathFinalizedRef.current
+        ) {
+          deathFinalizedRef.current = true;
+          setGameState(GAME_STATE.DEAD);
+        }
+      } else {
+        deathZeroSpeedTimer.current = 0;
+      }
+
+      animationRef.current = requestAnimationFrame(gameLoop);
+      return;
+    }
 
     // player physics — arcade estável (não Planck)
     speed.current += GRAVITY * dt;
@@ -470,6 +493,11 @@ function App() {
     const hitBottom = hits.find((h) => h.side === "bottom") || null;
 
     if (hitTop || hitBottom) {
+      isDeadRef.current = true;
+      // NÃO zera momentum — mapa desacelera junto com a speed residual
+      setDisplaySpeed(gameSpeed.current);
+
+      // Classificação única em death/classify.js
       const event = classifyDeath(hitTop, hitBottom, {
         velocityY: speed.current,
         playerX: player.x,
@@ -478,7 +506,7 @@ function App() {
         playerH: player.height,
       });
 
-      const spikeInfo = {
+      setDeathSpike({
         tipX: event.tip?.x,
         tipY: event.tip?.y,
         side: event.side,
@@ -488,62 +516,17 @@ function App() {
         impact: event.impact,
         face: hitTop?.face || hitBottom?.face || null,
         lateral: hitTop?.lateral || hitBottom?.lateral || 0,
-      };
+      });
+      setDeathObstacles([...topBoxes, ...bottomBoxes]);
+      deathTypeRef.current = event.type;
+      setDeathType(event.type);
+      setGameState(GAME_STATE.DYING);
+      // score só quando isDead && speed <= 0 por DEATH_ZERO_SPEED_MS
 
-      if (!isDeadRef.current) {
-        // 1ª colisão: trava tiro + ativa ragdoll/impale
-        isDeadRef.current = true;
-        setDisplaySpeed(gameSpeed.current);
-        setDeathSpike(spikeInfo);
-        setDeathObstacles([...topBoxes, ...bottomBoxes]);
-        deathTypeRef.current = event.type;
-        setDeathType(event.type);
-        setGameState(GAME_STATE.DYING);
-      } else {
-        // já morto: ainda colide — atualiza spike/obstáculos pra re-impalar
-        // e aplica bounce vertical como vivo
-        setDeathSpike(spikeInfo);
-        setDeathObstacles([...topBoxes, ...bottomBoxes]);
-        if (event.type !== deathTypeRef.current) {
-          deathTypeRef.current = event.type;
-          setDeathType(event.type);
-        }
-        if (hitBottom && speed.current > 0) {
-          speed.current *= -BOUNCE;
-          momentum.current *= 1 - BOUNCE_SPEED_LOSS;
-        } else if (hitTop && speed.current < 0) {
-          speed.current *= -BOUNCE;
-          momentum.current *= 1 - BOUNCE_SPEED_LOSS;
-        }
-        emitImpact({
-          strength: 2 + Math.abs(speed.current) * 0.15,
-          fx: 10,
-          fy: hitBottom ? -18 : 16,
-          part:
-            event.bodyPart === "head"
-              ? "head"
-              : event.bodyPart === "legs"
-                ? "legLeft"
-                : "chest",
-        });
-      }
-      // SEM return — bounce chão/teto e o resto do frame seguem
-    }
-
-    // fim da partida: morto + speed horizontal ~0 por DEATH_ZERO_SPEED_MS
-    if (isDeadRef.current) {
-      if (gameSpeed.current <= 0) {
-        deathZeroSpeedTimer.current += deltaTime;
-        if (
-          deathZeroSpeedTimer.current >= DEATH_ZERO_SPEED_MS &&
-          !deathFinalizedRef.current
-        ) {
-          deathFinalizedRef.current = true;
-          setGameState(GAME_STATE.DEAD);
-        }
-      } else {
-        deathZeroSpeedTimer.current = 0;
-      }
+      // ESSENCIAL: continua o loop — sem isso, o gameLoop morre neste
+      // frame e a speed/distância congelam pra sempre no valor da colisão.
+      animationRef.current = requestAnimationFrame(gameLoop);
+      return;
     }
 
     setDrawY(playerY.current);
@@ -770,4 +753,3 @@ function App() {
 }
 
 export default App;
-
