@@ -1,18 +1,10 @@
+
 /**
- * Geometria de colisão: player OBB × spike triângulo.
- *
- * API pública:
- *   playerAabb / isPlayerCollidingWithSpike
- *   findAllSpikeCollisionsQuad / findSpikeCollision / findSpikeCollisionQuad
- *   resolveSpikeContacts → ContactResult
- *
- * Classificação de gameplay (impale/bounce) fica em systems/spikeCollision.js
+ * Colisão jogador (OBB rotacionado) × spike (triângulo)
+ * + detecção de face: tip | base | left | right
  */
 
 const EPS = 0.5;
-const RESTITUTION = 0.78;
-
-// ─── helpers geométricos ────────────────────────────────────────────
 
 function sign(p1, p2, p3) {
   return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
@@ -24,15 +16,6 @@ export function pointInTriangle(point, triangle) {
   const b2 = sign(point, b, c) < EPS;
   const b3 = sign(point, c, a) < EPS;
   return b1 === b2 && b2 === b3;
-}
-
-function onSegment(a, b, p) {
-  return (
-    p.x >= Math.min(a.x, b.x) - EPS &&
-    p.x <= Math.max(a.x, b.x) + EPS &&
-    p.y >= Math.min(a.y, b.y) - EPS &&
-    p.y <= Math.max(a.y, b.y) + EPS
-  );
 }
 
 function segmentsIntersect(a, b, c, d) {
@@ -53,6 +36,16 @@ function segmentsIntersect(a, b, c, d) {
   return false;
 }
 
+function onSegment(a, b, p) {
+  return (
+    p.x >= Math.min(a.x, b.x) - EPS &&
+    p.x <= Math.max(a.x, b.x) + EPS &&
+    p.y >= Math.min(a.y, b.y) - EPS &&
+    p.y <= Math.max(a.y, b.y) + EPS
+  );
+}
+
+/** Centro do player (aceita cx/cy ou x/y + size) */
 function playerCenter(player) {
   if (player.cx != null && player.cy != null) {
     return { x: player.cx, y: player.cy };
@@ -63,6 +56,7 @@ function playerCenter(player) {
   };
 }
 
+/** angle em radianos (0 = em pé) */
 function playerAngle(player) {
   return player.angle || 0;
 }
@@ -76,23 +70,24 @@ function rotateLocal(lx, ly, ang, cx, cy) {
   };
 }
 
+/** Grid de pontos no retângulo local, rotacionado com o corpo */
 function samplePlayerPoints(player) {
   const w = player.width;
   const h = player.height;
   const { x: cx, y: cy } = playerCenter(player);
   const ang = playerAngle(player);
   const pts = [];
-  for (let iy = 0; iy <= 4; iy++) {
+  for (let iy = 0; iy <= 3; iy++) {
     for (let ix = 0; ix <= 2; ix++) {
       const lx = -w * 0.5 + (w * ix) / 2;
-      const ly = -h * 0.5 + (h * iy) / 4;
+      const ly = -h * 0.5 + (h * iy) / 3;
       pts.push(rotateLocal(lx, ly, ang, cx, cy));
     }
   }
+  pts.push({ x: cx, y: cy });
+  // extremos cabeça / pés no eixo local Y
   pts.push(rotateLocal(0, -h * 0.5, ang, cx, cy));
   pts.push(rotateLocal(0, h * 0.5, ang, cx, cy));
-  pts.push(rotateLocal(-w * 0.5, 0, ang, cx, cy));
-  pts.push(rotateLocal(w * 0.5, 0, ang, cx, cy));
   return pts;
 }
 
@@ -121,56 +116,7 @@ function playerEdges(player) {
   ];
 }
 
-function triAabb(tri) {
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
-  for (const v of tri) {
-    minX = Math.min(minX, v.x);
-    maxX = Math.max(maxX, v.x);
-    minY = Math.min(minY, v.y);
-    maxY = Math.max(maxY, v.y);
-  }
-  return { minX, maxX, minY, maxY };
-}
-
-function aabbOverlap(a, b, pad = EPS) {
-  return !(
-    a.maxX < b.minX - pad ||
-    a.minX > b.maxX + pad ||
-    a.maxY < b.minY - pad ||
-    a.minY > b.maxY + pad
-  );
-}
-
-function distPointSegment(p, a, b) {
-  const abx = b.x - a.x;
-  const aby = b.y - a.y;
-  const len2 = abx * abx + aby * aby || 1e-8;
-  let t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2;
-  t = Math.max(0, Math.min(1, t));
-  const qx = a.x + abx * t;
-  const qy = a.y + aby * t;
-  return { dist: Math.hypot(p.x - qx, p.y - qy), qx, qy, t };
-}
-
-function normalize(x, y) {
-  const len = Math.hypot(x, y) || 1;
-  return { x: x / len, y: y / len };
-}
-
-function outwardNormal(nx, ny, tip, baseA, baseB) {
-  const midX = (tip.x + baseA.x + baseB.x) / 3;
-  const midY = (tip.y + baseA.y + baseB.y) / 3;
-  if (nx * (midX - tip.x) + ny * (midY - tip.y) > 0) {
-    return { x: -nx, y: -ny };
-  }
-  return { x: nx, y: ny };
-}
-
-// ─── OBB / overlap ──────────────────────────────────────────────────
-
+/** AABB do OBB (pra culling rápido) */
 export function playerAabb(player) {
   const c = playerCorners(player);
   let minX = c[0].x,
@@ -189,12 +135,31 @@ export function playerAabb(player) {
 export function isPlayerCollidingWithSpike(player, spike) {
   if (!player || !spike?.points || spike.points.length < 3) return false;
   const tri = spike.points;
-  if (!aabbOverlap(playerAabb(player), triAabb(tri))) return false;
 
-  if (samplePlayerPoints(player).some((p) => pointInTriangle(p, tri))) {
-    return true;
+  // culling com AABB do OBB
+  const aabb = playerAabb(player);
+  let tMinX = Infinity,
+    tMaxX = -Infinity,
+    tMinY = Infinity,
+    tMaxY = -Infinity;
+  for (const v of tri) {
+    tMinX = Math.min(tMinX, v.x);
+    tMaxX = Math.max(tMaxX, v.x);
+    tMinY = Math.min(tMinY, v.y);
+    tMaxY = Math.max(tMaxY, v.y);
+  }
+  if (
+    aabb.maxX < tMinX - EPS ||
+    aabb.minX > tMaxX + EPS ||
+    aabb.maxY < tMinY - EPS ||
+    aabb.minY > tMaxY + EPS
+  ) {
+    return false;
   }
 
+  if (samplePlayerPoints(player).some((p) => pointInTriangle(p, tri))) return true;
+
+  // vértice do spike dentro do OBB? (amostra + edges cobre bem)
   const edges = playerEdges(player);
   const triEdges = [
     [tri[0], tri[1]],
@@ -209,212 +174,191 @@ export function isPlayerCollidingWithSpike(player, spike) {
   return false;
 }
 
-// ─── análise de contacto ────────────────────────────────────────────
-
-/**
- * Feature + normal (para fora do spike) + penetração + bodyPart.
- */
-function analyzeContact(player, hb) {
-  const tip = hb.tip || hb.points[0];
-  const size = hb.size || 48;
+function contactRegion(player, hb) {
+  if (!hb?.tip) return "tip";
+  const tip = hb.tip;
   const { x: cx, y: cy } = playerCenter(player);
-  const samples = samplePlayerPoints(player);
-  const inside = samples.filter((p) => pointInTriangle(p, hb.points));
 
-  const others = hb.points.filter(
+  const distTip = Math.hypot(cx - tip.x, cy - tip.y);
+  const basePts = hb.points.filter(
     (p) => Math.hypot(p.x - tip.x, p.y - tip.y) > 2
   );
-  const baseA = others[0] || hb.points[1];
-  const baseB = others[1] || hb.points[2];
-
-  let avgDistTip = 0;
-  let deepest = 0;
-  let deepPt = { x: cx, y: cy };
-
-  if (inside.length) {
-    for (const p of inside) {
-      avgDistTip += Math.hypot(p.x - tip.x, p.y - tip.y);
-      const pen =
-        hb.side === "bottom"
-          ? Math.max(0, tip.y + size * 0.15 - p.y)
-          : Math.max(0, p.y - (tip.y - size * 0.15));
-      if (pen > deepest) {
-        deepest = pen;
-        deepPt = p;
-      }
-    }
-    avgDistTip /= inside.length;
-  } else {
-    avgDistTip = Math.hypot(cx - tip.x, cy - tip.y);
+  let bx = tip.x;
+  let by = tip.y;
+  if (basePts.length) {
+    bx = basePts.reduce((s, p) => s + p.x, 0) / basePts.length;
+    by = basePts.reduce((s, p) => s + p.y, 0) / basePts.length;
   }
+  const distBase = Math.hypot(cx - bx, cy - by);
 
-  const distCenterTip = Math.hypot(cx - tip.x, cy - tip.y);
-  const tipZone = size * 0.36;
-
-  // feature
-  let feature = "base";
-  if (distCenterTip < tipZone || avgDistTip < tipZone * 1.1) {
-    feature = "tip";
-  } else {
-    const dL = distPointSegment({ x: cx, y: cy }, tip, baseA);
-    const dR = distPointSegment({ x: cx, y: cy }, tip, baseB);
-    const dB = distPointSegment({ x: cx, y: cy }, baseA, baseB);
-    if (dB.dist <= dL.dist && dB.dist <= dR.dist) feature = "base";
-    else if (dL.dist < dR.dist) feature = "edgeL";
-    else feature = "edgeR";
+  if (hb.side === "bottom") {
+    const tipZone = tip.y + (by - tip.y) * 0.42;
+    if (cy <= tipZone || distTip < distBase * 0.85 || distTip < 38) return "tip";
+    return "base";
   }
-
-  // normal para fora
-  let nx = 0;
-  let ny = 0;
-  if (feature === "tip") {
-    ({ x: nx, y: ny } = normalize(cx - tip.x, cy - tip.y));
-    if (hb.side === "bottom" && ny < 0.2) ({ x: nx, y: ny } = normalize(nx, 0.4));
-    if (hb.side === "top" && ny > -0.2) ({ x: nx, y: ny } = normalize(nx, -0.4));
-  } else if (feature === "base") {
-    nx = 0;
-    ny = hb.side === "bottom" ? -1 : 1;
-  } else {
-    const edgeB = feature === "edgeL" ? baseA : baseB;
-    const n = normalize(-(edgeB.y - tip.y), edgeB.x - tip.x);
-    const out = outwardNormal(n.x, n.y, tip, baseA, baseB);
-    nx = out.x;
-    ny = out.y;
-  }
-
-  let penetration = deepest;
-  if (penetration < 2 && inside.length) penetration = 4 + inside.length * 1.5;
-  if (penetration < 1) penetration = 2;
-
-  // body part em espaço local do player
-  const ang = playerAngle(player);
-  const cos = Math.cos(-ang);
-  const sin = Math.sin(-ang);
-  const ly =
-    (deepPt.x - cx) * sin + (deepPt.y - cy) * cos;
-  const h = player.height || 56;
-  let bodyPart = "torso";
-  if (ly < -h * 0.2) bodyPart = "head";
-  else if (ly > h * 0.14) bodyPart = "legs";
-  else if (Math.abs(cx - tip.x) > size * 0.3 && ly < h * 0.08) bodyPart = "arms";
-
-  return {
-    hb,
-    tip,
-    side: hb.side,
-    feature,
-    bodyPart,
-    nx,
-    ny,
-    penetration,
-    contactX: deepPt.x,
-    contactY: deepPt.y,
-    distTip: distCenterTip,
-    offsetX: cx - tip.x,
-  };
+  if (distTip < 48 || distTip < distBase * 0.85) return "tip";
+  return "base";
 }
-
-function classifyKind(best, velocityY) {
-  const towardTip =
-    (best.side === "bottom" && velocityY > 0.5) ||
-    (best.side === "top" && velocityY < -0.5);
-
-  if (best.feature !== "tip") return { kind: "bounce", limbKey: null };
-
-  if (best.bodyPart === "legs" || best.bodyPart === "arms") {
-    const limbKey =
-      best.bodyPart === "arms"
-        ? best.offsetX < 0
-          ? "armLeft"
-          : "armRight"
-        : best.offsetX < 0
-          ? "legLeft"
-          : "legRight";
-    return { kind: "impale_limb", limbKey };
-  }
-
-  if (
-    towardTip ||
-    best.penetration > 6 ||
-    best.distTip < (best.hb.size || 48) * 0.28
-  ) {
-    return { kind: "impale_core", limbKey: null };
-  }
-
-  return { kind: "bounce", limbKey: null };
-}
-
-function computeImpulseY(best, velocityY, kind) {
-  const absVy = Math.abs(velocityY);
-  const vn = velocityY * best.ny;
-  let impulseY =
-    vn < 0
-      ? -(1 + RESTITUTION) * vn
-      : best.ny * (2.5 + Math.min(4, absVy * 0.15));
-
-  if (kind === "bounce") {
-    if (best.side === "bottom" && impulseY > -2) {
-      impulseY = -Math.max(3.5, absVy * RESTITUTION);
-    }
-    if (best.side === "top" && impulseY < 2) {
-      impulseY = Math.max(3.5, absVy * RESTITUTION);
-    }
-  }
-  return impulseY;
-}
-
-const NONE_CONTACT = {
-  kind: "none",
-  side: null,
-  bodyPart: "torso",
-  feature: "base",
-  tip: null,
-  nx: 0,
-  ny: 0,
-  penetration: 0,
-  impulseY: 0,
-  offsetX: 0,
-  limbKey: null,
-  contactX: 0,
-  contactY: 0,
-};
 
 /**
- * Resolve todos os hits do frame → um ContactResult.
- * kind: none | impale_core | impale_limb | bounce
+ * Face: tip | base | left | right
+ * Usa pontos do OBB rotacionado.
  */
-export function resolveSpikeContacts(player, hits, velocityY = 0) {
-  if (!hits?.length) return { ...NONE_CONTACT };
+function contactFace(player, hb, region) {
+  if (!hb?.points || hb.points.length < 3) return region || "tip";
 
-  const analyzed = hits.map((hb) => analyzeContact(player, hb));
-  analyzed.sort((a, b) => {
-    const score = (c) =>
-      (c.feature === "tip" ? 1000 : 0) + c.penetration * 10 - c.distTip * 0.1;
-    return score(b) - score(a);
-  });
-  const best = analyzed[0];
-  const { kind, limbKey } = classifyKind(best, velocityY);
-  const impulseY = computeImpulseY(best, velocityY, kind);
+  const tip = hb.tip || hb.points[0];
+  const pts = samplePlayerPoints(player);
+  const { x: cx, y: cy } = playerCenter(player);
 
+  let tipHits = 0;
+  let leftHits = 0;
+  let rightHits = 0;
+  let baseHits = 0;
+
+  const size = hb.size || 48;
+  for (const p of pts) {
+    if (!pointInTriangle(p, hb.points)) continue;
+    const dx = p.x - tip.x;
+    const dy = p.y - tip.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < size * 0.38) {
+      tipHits++;
+      continue;
+    }
+    if (hb.side === "bottom") {
+      if (p.y > tip.y + size * 0.55) baseHits++;
+      else if (dx < -size * 0.12) leftHits++;
+      else if (dx > size * 0.12) rightHits++;
+      else tipHits++;
+    } else {
+      if (p.y < tip.y - size * 0.55) baseHits++;
+      else if (dx < -size * 0.12) leftHits++;
+      else if (dx > size * 0.12) rightHits++;
+      else tipHits++;
+    }
+  }
+
+  const offsetX = cx - tip.x;
+  const lateral = Math.abs(offsetX) / Math.max(size * 0.5, 1);
+  const lateralThresh = 0.55;
+
+  if (tipHits >= leftHits && tipHits >= rightHits && tipHits >= baseHits && tipHits > 0) {
+    return "tip";
+  }
+  if (baseHits > tipHits && baseHits >= leftHits && baseHits >= rightHits) {
+    return "base";
+  }
+  if (leftHits > rightHits && leftHits > 0) return "left";
+  if (rightHits > leftHits && rightHits > 0) return "right";
+
+  const distToTip = Math.hypot(cx - tip.x, cy - tip.y);
+  if (distToTip < size * 0.42) return "tip";
+
+  if (lateral > lateralThresh * 1.25 && region !== "tip" && distToTip > size * 0.5) {
+    return offsetX > 0 ? "right" : "left";
+  }
+
+  if (region === "base") return "base";
+  return "tip";
+}
+
+function classifyBodyPart(player, hb) {
+  if (!hb?.tip) return "torso";
+  const samples = samplePlayerPoints(player);
+  const inside = samples.filter((p) => pointInTriangle(p, hb.points));
+  if (!inside.length) return "torso";
+
+  // eixo local do player: ly negativo = cabeça
+  const { x: cx, y: cy } = playerCenter(player);
+  const ang = playerAngle(player);
+  const c = Math.cos(-ang);
+  const s = Math.sin(-ang);
+  let avgLy = 0;
+  for (const p of inside) {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const ly = dx * s + dy * c; // local Y
+    avgLy += ly;
+  }
+  avgLy /= inside.length;
+  const h = player.height || 56;
+  if (avgLy < -h * 0.22) return "head";
+  if (avgLy > h * 0.18) return "legs";
+  return "torso";
+}
+
+function packHit(player, hb) {
+  const region = contactRegion(player, hb);
+  const face = contactFace(player, hb, region);
+  const bodyPart = classifyBodyPart(player, hb);
+  const { x: cx } = playerCenter(player);
+  const tip = hb.tip || hb.points[0];
   return {
-    kind,
-    side: best.side,
-    bodyPart: best.bodyPart,
-    feature: best.feature,
-    tip: best.tip,
-    nx: best.nx,
-    ny: best.ny,
-    penetration: best.penetration,
-    impulseY,
-    offsetX: best.offsetX,
-    limbKey,
-    contactX: best.contactX,
-    contactY: best.contactY,
+    ...hb,
+    region,
+    face,
+    bodyPart,
+    tip,
+    offsetX: cx - (tip?.x ?? cx),
+    lateral: Math.abs(cx - (tip?.x ?? cx)) / Math.max(hb.size || 48, 1),
   };
 }
 
-// ─── queries ────────────────────────────────────────────────────────
+/**
+ * Colisão OBB × lista de spikes (linear — ok pra poucos).
+ * @param {object} player
+ * @param {object[]} hitboxes
+ */
+export function findSpikeCollision(player, hitboxes) {
+  if (!player || !hitboxes?.length) return null;
+  for (const hb of hitboxes) {
+    if (!isPlayerCollidingWithSpike(player, hb)) continue;
+    return packHit(player, hb);
+  }
+  return null;
+}
 
+/**
+ * Colisão OBB × candidatos do quadtree (só testa quem intersecta o AABB do player).
+ * @param {object} player
+ * @param {import('./quadtree.js').QuadTree} tree
+ */
+/**
+ * Retorna o hit mais próximo do centro do player entre candidatos do quadtree.
+ * Também exporta side top/bottom no objeto.
+ */
+export function findSpikeCollisionQuad(player, tree) {
+  if (!player || !tree) return null;
+  const aabb = playerAabb(player);
+  const range = {
+    minX: aabb.minX - 4,
+    minY: aabb.minY - 4,
+    maxX: aabb.maxX + 4,
+    maxY: aabb.maxY + 4,
+  };
+  const candidates = tree.query(range);
+  const seen = new Set();
+  const { x: cx, y: cy } = playerCenter(player);
+  let best = null;
+  let bestD = Infinity;
+  for (const item of candidates) {
+    const hb = item.ref;
+    if (!hb || seen.has(hb)) continue;
+    seen.add(hb);
+    if (!isPlayerCollidingWithSpike(player, hb)) continue;
+    const packed = packHit(player, hb);
+    const tip = packed.tip || hb.points[0];
+    const d = Math.hypot((tip?.x ?? cx) - cx, (tip?.y ?? cy) - cy);
+    if (d < bestD) {
+      bestD = d;
+      best = packed;
+    }
+  }
+  return best;
+}
+
+/** Todos os hits OBB nos candidatos (top e bottom no mesmo frame). */
 export function findAllSpikeCollisionsQuad(player, tree) {
   if (!player || !tree) return [];
   const aabb = playerAabb(player);
@@ -432,20 +376,8 @@ export function findAllSpikeCollisionsQuad(player, tree) {
     if (!hb || seen.has(hb)) continue;
     seen.add(hb);
     if (!isPlayerCollidingWithSpike(player, hb)) continue;
-    hits.push(hb);
+    hits.push(packHit(player, hb));
   }
   return hits;
 }
 
-export function findSpikeCollision(player, hitboxes) {
-  if (!player || !hitboxes?.length) return null;
-  for (const hb of hitboxes) {
-    if (!isPlayerCollidingWithSpike(player, hb)) continue;
-    return hb;
-  }
-  return null;
-}
-
-export function findSpikeCollisionQuad(player, tree) {
-  return findAllSpikeCollisionsQuad(player, tree)[0] || null;
-}

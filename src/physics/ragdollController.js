@@ -4,6 +4,7 @@
 import { DeathType } from "../death/types.js";
 import { applyDeathBehavior, floorKick } from "../death/behaviors.js";
 import { createStandingBody } from "./bodyFactory.js";
+import { SPIKE_SPEED } from "../constants/game.js";
 import {
   setPinned,
   unpin,
@@ -59,10 +60,19 @@ export function createRagdoll(x, y, opts = {}) {
   };
 }
 
-export function stepRagdoll(ragdoll, dtNorm = 1) {
+export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
   if (!ragdoll || !ragdoll.alive) return;
 
   const dtSec = dtNorm * (16.67 / 1000);
+
+  // Os spikes continuam andando depois da morte enquanto houver speed
+  // (hooks/useSpikes.js: delta = (SPIKE_SPEED + gameSpeed) * dt). O
+  // ponto onde o corpo está preso (empalado/pendurado) tem que "andar"
+  // junto com o espeto que o segura, na MESMA taxa — senão ele desgruda
+  // visualmente do espeto conforme o mapa rola.
+  if (moveSpeed > 0) {
+    ragdoll.spikeTipX -= (SPIKE_SPEED + moveSpeed) * dtNorm;
+  }
 
   if (ragdoll.deathType === DeathType.HANG) {
     if (!ragdoll.hangReleased) {

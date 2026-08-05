@@ -15,9 +15,6 @@ import {
   livingSnapshot,
   applyBoneImpact,
   releaseBones,
-  pinPart,
-  unpinPart,
-  shiftPins,
 } from "../../physics/livingRagdoll.js";
 
 /**
@@ -319,9 +316,7 @@ function Player({
   bloodRef = null,
   hitboxAngleRef = null, // ref do App: hitbox rotacionada
   impactEvent = null, // { id, strength, fx, fy, part } do App
-  pinEvent = null, // { id, part, x, y, side, isCore, releaseAfterMs }
-  onBodySettled = null,
-  externalSever = null, // { legLeft, legRight, armLeft, armRight } do App (spike)
+  onBodySettled = null, // score só quando corpo parar
 }) {
   const [wounds, setWounds] = useState([]);
   const [bloodSpray, setBloodSpray] = useState([]);
@@ -346,6 +341,7 @@ function Player({
   const velocityRef = useRef(velocityY);
   const moveSpeedRef = useRef(moveSpeed);
   const drawYRef = useRef(drawY);
+  const obstaclesRef = useRef(deathObstacles); // hitboxes atuais dos spikes, atualiza sem recriar o ragdoll
   const ragdollRef = useRef(null);
   const ragdollRaf = useRef(null);
   const lastRafTime = useRef(0);
@@ -356,6 +352,7 @@ function Player({
   velocityRef.current = velocityY;
   moveSpeedRef.current = moveSpeed;
   drawYRef.current = drawY;
+  obstaclesRef.current = deathObstacles;
   limbsRef.current = limbs;
   vitalRef.current = vitalIndex;
   woundsRef.current = wounds;
@@ -531,61 +528,6 @@ function Player({
     spinRef.current += (impactEvent.fx >= 0 ? 1 : -1) * (impactEvent.strength || 1) * 25;
   }, [impactEvent, deathType, playerX]);
 
-  // pin de impale (membro ou núcleo) — física única
-  const lastPinId = useRef(0);
-  useEffect(() => {
-    if (!pinEvent || pinEvent.id === lastPinId.current) return;
-    lastPinId.current = pinEvent.id;
-    if (!livingRef.current) {
-      livingRef.current = createLivingRagdoll(playerX, drawYRef.current, {
-        legLeft: limbsRef.current.legLeft.severed,
-        legRight: limbsRef.current.legRight.severed,
-        armLeft: limbsRef.current.armLeft.severed,
-        armRight: limbsRef.current.armRight.severed,
-      });
-    }
-    pinPart(livingRef.current, pinEvent.part, pinEvent.x, pinEvent.y, {
-      side: pinEvent.side,
-      isCore: pinEvent.isCore,
-    });
-    // teto: solta após um instante → cai
-    if (pinEvent.releaseAfterMs != null && pinEvent.releaseAfterMs > 0) {
-      const part = pinEvent.part;
-      const t = setTimeout(() => {
-        if (livingRef.current) {
-          unpinPart(livingRef.current, part);
-          // impulso pra cair
-          applyBoneImpact(livingRef.current, {
-            part,
-            fx: 0,
-            fy: 14,
-            strength: 2,
-          });
-        }
-      }, pinEvent.releaseAfterMs);
-      return () => clearTimeout(t);
-    }
-  }, [pinEvent, playerX]);
-
-  // sever por spike (App) — mantém arcade, só marca membro cortado
-  useEffect(() => {
-    if (!externalSever) return;
-    setLimbs((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const key of ["legLeft", "legRight", "armLeft", "armRight"]) {
-        if (externalSever[key] && !prev[key].severed) {
-          next[key] = { ...prev[key], severed: true, hits: 99 };
-          changed = true;
-        }
-      }
-      if (!changed) return prev;
-      limbsRef.current = next;
-      return next;
-    });
-  }, [externalSever]);
-
-
 
   useEffect(() => {
     if (deathType === "none") {
@@ -631,7 +573,7 @@ function Player({
       impact: deathSpike?.impact ?? 1,
       bodyPart: deathSpike?.bodyPart ?? "torso",
       region: deathSpike?.region ?? "tip",
-      obstacles: deathObstacles ?? [],
+      obstacles: obstaclesRef.current ?? [],
       onBlood: ({ x, y, count = 8, power = 1 }) => {
         bloodRef?.current?.burst({
           x,
@@ -666,6 +608,12 @@ function Player({
       lastRafTime.current = time;
       const dtNorm = dt / 16.67;
 
+      // spikes continuam andando depois da morte — mantém a colisão do
+      // ragdoll sempre com a posição ATUAL deles, sem recriar o corpo
+      // inteiro (evitaria resetar pose/velocidade a cada frame).
+      if (ragdollRef.current) {
+        ragdollRef.current.obstacles = obstaclesRef.current;
+      }
       stepRagdoll(ragdollRef.current, dtNorm, moveSpeedRef.current);
       setRagdollPose(ragdollSnapshot(ragdollRef.current));
       ragdollRaf.current = requestAnimationFrame(loop);
@@ -678,7 +626,7 @@ function Player({
         ragdollRaf.current = null;
       }
     };
-  }, [deathType, playerX, deathSpike, deathObstacles]);
+  }, [deathType, playerX, deathSpike]);
 
   useEffect(() => {
     if (deathType === "none" && shotTick === 0) {
@@ -970,12 +918,6 @@ function Player({
         armLeft: limbsRef.current.armLeft.severed,
         armRight: limbsRef.current.armRight.severed,
       };
-
-      // pins andam com o mapa (spikes rolam) — SPIKE_SPEED = 4 em constants/game.js
-      if (livingRef.current && moveSpeedRef.current > 0) {
-        const dx = -(4 + moveSpeedRef.current) * dtSec;
-        shiftPins(livingRef.current, dx);
-      }
 
       stepLivingRagdoll(
         livingRef.current,

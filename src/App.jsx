@@ -14,12 +14,11 @@ import BloodLayer from "./components/Blood/BloodLayer.jsx";
 
 import useSpikes from "./hooks/useSpikes.js";
 import usePlayerPhysics from "./hooks/usePlayerPhysics.js";
-import { classifyStall } from "./death/index.js";
+import { findAllSpikeCollisionsQuad } from "./utils/collision.js";
+import { buildSpikeQuadTree } from "./utils/quadtree.js";
+import { cullSpikeHitboxes } from "./utils/spatialHash.js";
+import { classifyDeath, classifyStall, DeathType } from "./death/index.js";
 import { createSpikeHitboxes } from "./utils/spikeHitboxes.js";
-import {
-  processSpikeFrame,
-  applyMomentumMul,
-} from "./systems/spikeCollision.js";
 
 import {
   BASE_GAME_SPEED,
@@ -39,7 +38,6 @@ import {
   DEATH_DELAY_MS,
   DEATH_ZERO_SPEED_MS,
   DEATH_MOMENTUM_DECAY_MULTIPLIER,
-  SPIKE_SPEED,
   WEAPONS,
 } from "./constants/game.js";
 
@@ -95,10 +93,6 @@ function App() {
   const deathTypeRef = useRef("none"); // leitura confiável dentro do gameLoop
   const [impactEvent, setImpactEvent] = useState(null);
   const impactIdRef = useRef(0);
-  const [pinEvent, setPinEvent] = useState(null);
-  const pinIdRef = useRef(0);
-  /** true enquanto núcleo (cabeça/peito) está impalado no spike de baixo */
-  const corePinnedRef = useRef(false);
   const settledRef = useRef(false); // none | spike_side | spike_hang | spike_impale | stall
   const [deathSpike, setDeathSpike] = useState(null); // { tipX, tipY, side }
   const [deathObstacles, setDeathObstacles] = useState([]); // hitboxes na morte
@@ -114,18 +108,7 @@ function App() {
 
   // game state — começa no MENU
   const [gameState, setGameState] = useState(GAME_STATE.MENU);
-  const isDeadRef = useRef(false); // true só no fim (score) OU legado
-  const noShootRef = useRef(false); // tocou spike: sem tiro, arcade segue
-  const spikeHitCooldown = useRef(0);
-  const [externalSever, setExternalSever] = useState({
-    legLeft: false,
-    legRight: false,
-    armLeft: false,
-    armRight: false,
-  });
-  const [stuckLimbs, setStuckLimbs] = useState([]); // {id, limb, x, y}
-  const stuckLimbsRef = useRef([]);
-  const maxDistanceRef = useRef(0);
+  const isDeadRef = useRef(false);
   const playerAngleRef = useRef(0); // radianos — hitbox acompanha rotação
   const zeroSpeedTimer = useRef(0); // ms acumulados com speed 0 (enquanto vivo — morte por stall)
   const deathZeroSpeedTimer = useRef(0); // ms acumulados com speed 0 depois de isDead (fim de jogo)
@@ -209,19 +192,6 @@ function App() {
     });
   }
 
-  function emitPin({ part, x, y, side, isCore, releaseAfterMs }) {
-    pinIdRef.current += 1;
-    setPinEvent({
-      id: pinIdRef.current,
-      part: part || "chest",
-      x,
-      y,
-      side: side || "bottom",
-      isCore: !!isCore,
-      releaseAfterMs: releaseAfterMs ?? null,
-    });
-  }
-
   // O ragdoll (Player.jsx) ainda chama isso quando o corpo para de se
   // mexer visualmente, mas quem decide o fim de jogo agora é só o timer
   // de "speed <= 0 por DEATH_ZERO_SPEED_MS" no gameLoop — mantido aqui
@@ -243,14 +213,6 @@ function App() {
 
     setSelectedWeaponId(weaponId);
     isDeadRef.current = false;
-    noShootRef.current = false;
-    spikeHitCooldown.current = 0;
-    setExternalSever({ legLeft: false, legRight: false, armLeft: false, armRight: false });
-    setStuckLimbs([]);
-    stuckLimbsRef.current = [];
-    setPinEvent(null);
-    corePinnedRef.current = false;
-    maxDistanceRef.current = 0;
     zeroSpeedTimer.current = 0;
     deathZeroSpeedTimer.current = 0;
     deathFinalizedRef.current = false;
@@ -282,14 +244,6 @@ function App() {
   function resetGame() {
     // reinicia com a mesma arma
     isDeadRef.current = false;
-    noShootRef.current = false;
-    spikeHitCooldown.current = 0;
-    setExternalSever({ legLeft: false, legRight: false, armLeft: false, armRight: false });
-    setStuckLimbs([]);
-    stuckLimbsRef.current = [];
-    setPinEvent(null);
-    corePinnedRef.current = false;
-    maxDistanceRef.current = 0;
     zeroSpeedTimer.current = 0;
     deathZeroSpeedTimer.current = 0;
     deathFinalizedRef.current = false;
@@ -352,21 +306,8 @@ function App() {
     gameSpeed.current = Math.min(momentum.current, MAX_GAME_SPEED);
 
     distanceRef.current += gameSpeed.current * dt;
-    if (distanceRef.current > maxDistanceRef.current) {
-      maxDistanceRef.current = distanceRef.current;
-    }
-    setDistance(Math.floor(maxDistanceRef.current));
+    setDistance(Math.floor(distanceRef.current));
     setDisplaySpeed(gameSpeed.current);
-
-    // membros presos no spike andam com o mapa
-    if (stuckLimbsRef.current.length && gameSpeed.current > 0) {
-      const dx = (SPIKE_SPEED + gameSpeed.current) * dt;
-      stuckLimbsRef.current = stuckLimbsRef.current.map((s) => ({
-        ...s,
-        x: s.x - dx,
-      }));
-      setStuckLimbs(stuckLimbsRef.current);
-    }
 
     // Spikes rolam sempre que houver speed — vivo ou morto. Só param
     // quando gameSpeed.current chega a 0.
@@ -374,81 +315,108 @@ function App() {
       updateSpikes(dt, gameSpeed.current);
     }
 
-    // hitboxes de debug sempre acompanham a posição atual dos spikes,
-    // vivo ou morto — senão desalinham do desenho quando o mapa
-    // continua andando depois da morte.
-    setDebugHitboxes([
+    // hitboxes de debug (e as usadas na colisão do corpo morto com os
+    // spikes) sempre acompanham a posição atual deles, vivo ou morto —
+    // senão desalinham quando o mapa continua andando depois da morte.
+    // Culling pela posição do player, senão manda a tela inteira de
+    // spikes pro ragdoll testar ponto-a-ponto a cada frame (pesado e
+    // pode causar empurrões vindos de espetos longe do corpo).
+    const rawSpikeHitboxes = [
       ...createSpikeHitboxes(spikesRef.current.top, "top"),
       ...createSpikeHitboxes(spikesRef.current.bottom, "bottom"),
-    ]);
+    ];
+    const currentSpikeHitboxes = cullSpikeHitboxes(rawSpikeHitboxes, {
+      focusX: 300 + 24,
+      focusY: playerY.current + 32,
+      focusRadius: 260,
+      margin: 64,
+    });
+    setDebugHitboxes(currentSpikeHitboxes);
+    if (isDeadRef.current) {
+      setDeathObstacles(currentSpikeHitboxes);
+    }
 
-    // noShoot: só bloqueia tiro no input.
-    // Núcleo impalado no chão: congela Y/vy (corpo fica no pin).
-    // Caso contrário: física arcade normal.
-
-    if (corePinnedRef.current) {
-      speed.current = 0;
-    } else {
-      // player physics — arcade estável (não Planck)
-      speed.current += GRAVITY * dt;
-      playerY.current += speed.current * dt;
-
-      if (speed.current > 0) {
-        const fallGain = Math.min(
-          speed.current * FALL_SPEED_GAIN * dt,
-          FALL_SPEED_CAP * dt
-        );
-        momentum.current = Math.min(
-          momentum.current + fallGain,
-          MAX_GAME_SPEED
-        );
+    // durante DYING: a ÚNICA coisa que muda é o Player não poder mais
+    // atirar (bloqueado no keyDown via isDeadRef). Física/HUD/spikes
+    // seguem tocando normalmente. O jogo só termina quando a speed
+    // ficar em 0 por mais de DEATH_ZERO_SPEED_MS seguidos.
+    if (isDeadRef.current) {
+      if (gameSpeed.current <= 0) {
+        deathZeroSpeedTimer.current += deltaTime;
+        if (
+          deathZeroSpeedTimer.current >= DEATH_ZERO_SPEED_MS &&
+          !deathFinalizedRef.current
+        ) {
+          deathFinalizedRef.current = true;
+          setGameState(GAME_STATE.DEAD);
+        }
+      } else {
+        deathZeroSpeedTimer.current = 0;
       }
 
-      // Extremidades reais do corpo (cabeça/ombros/mãos/joelhos/pés),
-      // rotacionadas pelo ângulo atual — iguais às usadas no ragdoll vivo
-      // (physics/livingRagdoll.js). Corrige o pé afundando no chão quando
-      // em pé e a "levitação" quando de cabeça pra baixo.
-      {
-        const ang = playerAngleRef.current || 0;
-        const { top: extTop, bottom: extBottom } = getBodyVerticalExtents(ang);
-        const cy = playerY.current + 32; // mesmo "cy" do ragdoll vivo
-        const bodyTopY = cy + extTop; // ponto mais alto do corpo agora
-        const bodyBottomY = cy + extBottom; // ponto mais baixo do corpo agora
+      animationRef.current = requestAnimationFrame(gameLoop);
+      return;
+    }
 
-        // teto — o ponto mais alto do corpo não pode passar da linha do teto
-        if (bodyTopY <= teto) {
-          const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
-          playerY.current += teto - bodyTopY;
-          if (speed.current < 0) {
-            speed.current *= -BOUNCE;
-            momentum.current *= 1 - BOUNCE_SPEED_LOSS;
-            emitImpact({
-              strength: impactStr,
-              fx: 8 + impactStr * 4,
-              fy: 12 + impactStr * 6,
-              part: "head",
-            });
-          } else {
-            speed.current = Math.max(0, speed.current);
-          }
+    // player physics — arcade estável (não Planck)
+    speed.current += GRAVITY * dt;
+    playerY.current += speed.current * dt;
+
+    if (speed.current > 0) {
+      const fallGain = Math.min(
+        speed.current * FALL_SPEED_GAIN * dt,
+        FALL_SPEED_CAP * dt
+      );
+      momentum.current = Math.min(
+        momentum.current + fallGain,
+        MAX_GAME_SPEED
+      );
+    }
+
+    // Extremidades reais do corpo (cabeça/ombros/mãos/joelhos/pés),
+    // rotacionadas pelo ângulo atual — iguais às usadas no ragdoll vivo
+    // (physics/livingRagdoll.js). Corrige o pé afundando no chão quando
+    // em pé e a "levitação" quando de cabeça pra baixo.
+    {
+      const ang = playerAngleRef.current || 0;
+      const { top: extTop, bottom: extBottom } = getBodyVerticalExtents(ang);
+      const cy = playerY.current + 32; // mesmo "cy" do ragdoll vivo
+      const bodyTopY = cy + extTop; // ponto mais alto do corpo agora
+      const bodyBottomY = cy + extBottom; // ponto mais baixo do corpo agora
+
+      // teto — o ponto mais alto do corpo não pode passar da linha do teto
+      if (bodyTopY <= teto) {
+        const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
+        playerY.current += teto - bodyTopY;
+        if (speed.current < 0) {
+          speed.current *= -BOUNCE;
+          momentum.current *= 1 - BOUNCE_SPEED_LOSS;
+          emitImpact({
+            strength: impactStr,
+            fx: 8 + impactStr * 4,
+            fy: 12 + impactStr * 6,
+            part: "head",
+          });
+        } else {
+          speed.current = Math.max(0, speed.current);
         }
+      }
 
-        // chão — o ponto mais baixo do corpo não pode passar da linha do chão
-        if (bodyBottomY >= groundLineY) {
-          const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
-          playerY.current -= bodyBottomY - groundLineY;
-          if (speed.current > 0) {
-            speed.current *= -BOUNCE;
-            momentum.current *= 1 - BOUNCE_SPEED_LOSS;
-            emitImpact({
-              strength: impactStr,
-              fx: 6 + impactStr * 3,
-              fy: -(10 + impactStr * 5),
-              part: "legLeft",
-            });
-          } else {
-            speed.current = Math.min(0, speed.current);
-          }
+      // chão — o ponto mais baixo do corpo não pode passar da linha do chão
+      if (bodyBottomY >= groundLineY) {
+        const impactStr = Math.min(8, 1.2 + Math.abs(speed.current) * 0.35);
+        playerY.current -= bodyBottomY - groundLineY;
+        if (speed.current > 0) {
+          speed.current *= -BOUNCE;
+          momentum.current *= 1 - BOUNCE_SPEED_LOSS;
+          emitImpact({
+            strength: impactStr,
+            fx: 6 + impactStr * 3,
+            fy: -(10 + impactStr * 5),
+            part: "legLeft",
+          });
+        } else {
+          speed.current = Math.min(0, speed.current);
         }
       }
     }
@@ -466,9 +434,9 @@ function App() {
         deathTypeRef.current = stallEvent.type;
         setDeathType(stallEvent.type);
         setDeathSpike(null);
-        setDeathObstacles([]);
+    setDeathObstacles([]);
         setGameState(GAME_STATE.DYING);
-        // score só quando isDead && speed <= 0 por DEATH_ZERO_SPEED_MS
+      // score só quando isDead && speed <= 0 por DEATH_ZERO_SPEED_MS
 
         // ESSENCIAL: continua o loop — mesmo motivo do fix na colisão com spike
         animationRef.current = requestAnimationFrame(gameLoop);
@@ -500,78 +468,74 @@ function App() {
       }
     }
 
-    // ─── Colisão spikes (pipeline: query → resolve → plan → apply) ───
-    if (spikeHitCooldown.current > 0) {
-      spikeHitCooldown.current -= deltaTime;
-    }
+    // colisão — OBB centrado no corpo, rotacionado com o ragdoll vivo
+    const pCx = 300 + 24;
+    const pCy = playerY.current + 32;
+    const player = {
+      x: pCx - 16,
+      y: pCy - 28,
+      width: 32,
+      height: 56,
+      cx: pCx,
+      cy: pCy,
+      angle: playerAngleRef.current, // radianos
+    };
 
-    const { plan: spikePlan } = processSpikeFrame({
-      playerX: 300,
-      playerY: playerY.current,
-      angle: playerAngleRef.current,
-      velocityY: speed.current,
-      spikesRef: spikesRef.current,
-      corePinned: corePinnedRef.current,
-      cooldownRemaining: spikeHitCooldown.current,
+    const topBoxes = createSpikeHitboxes(spikesRef.current.top, "top");
+    const bottomBoxes = createSpikeHitboxes(spikesRef.current.bottom, "bottom");
+    // 1) culling: fora da tela / longe do player
+    // 2) quadtree: broadphase espacial
+    // 3) OBB fino só nos candidatos
+    const rawBoxes =
+      topBoxes.length || bottomBoxes.length
+        ? [...topBoxes, ...bottomBoxes]
+        : [];
+    const allBoxes = cullSpikeHitboxes(rawBoxes, {
+      focusX: pCx,
+      focusY: pCy,
+      focusRadius: 260,
+      margin: 64,
     });
+    const spikeTree = buildSpikeQuadTree(allBoxes);
+    const hits = findAllSpikeCollisionsQuad(player, spikeTree);
+    const hitTop = hits.find((h) => h.side === "top") || null;
+    const hitBottom = hits.find((h) => h.side === "bottom") || null;
 
-    if (spikePlan.handled) {
-      if (spikePlan.noShoot) {
-        noShootRef.current = true;
-        setGameState(GAME_STATE.DYING);
-      }
-      if (spikePlan.cooldownMs > 0) {
-        spikeHitCooldown.current = spikePlan.cooldownMs;
-      }
-      if (spikePlan.corePinned != null) {
-        corePinnedRef.current = spikePlan.corePinned;
-      }
-      if (spikePlan.separateY) {
-        playerY.current += spikePlan.separateY;
-      }
-      if (spikePlan.playerY != null) {
-        playerY.current = spikePlan.playerY;
-      }
-      if (spikePlan.velocityY != null) {
-        speed.current = spikePlan.velocityY;
-      }
-      if (spikePlan.momentumMul !== 1) {
-        const m = applyMomentumMul(momentum.current, spikePlan.momentumMul);
-        momentum.current = m.momentum;
-        gameSpeed.current = m.gameSpeed;
-        setDisplaySpeed(gameSpeed.current);
-      }
-      if (spikePlan.pin) emitPin(spikePlan.pin);
-      if (spikePlan.impact) emitImpact(spikePlan.impact);
-      if (spikePlan.severLimb) {
-        const limbKey = spikePlan.severLimb;
-        setExternalSever((prev) =>
-          prev[limbKey] ? prev : { ...prev, [limbKey]: true }
-        );
-      }
-      if (spikePlan.stuckLimb) {
-        stuckLimbsRef.current = [
-          ...stuckLimbsRef.current,
-          spikePlan.stuckLimb,
-        ];
-        setStuckLimbs(stuckLimbsRef.current);
-      }
-    }
+    if (hitTop || hitBottom) {
+      isDeadRef.current = true;
+      // NÃO zera momentum — mapa desacelera junto com a speed residual
+      setDisplaySpeed(gameSpeed.current);
 
-    // fim: ferido (noShoot) e speed ~0 por DEATH_ZERO_SPEED_MS
-    if (noShootRef.current && gameSpeed.current <= 0) {
-      deathZeroSpeedTimer.current += deltaTime;
-      if (
-        deathZeroSpeedTimer.current >= DEATH_ZERO_SPEED_MS &&
-        !deathFinalizedRef.current
-      ) {
-        deathFinalizedRef.current = true;
-        isDeadRef.current = true;
-        setDistance(Math.floor(maxDistanceRef.current));
-        setGameState(GAME_STATE.DEAD);
-      }
-    } else if (noShootRef.current) {
-      deathZeroSpeedTimer.current = 0;
+      // Classificação única em death/classify.js
+      const event = classifyDeath(hitTop, hitBottom, {
+        velocityY: speed.current,
+        playerX: player.x,
+        playerY: player.y,
+        playerW: player.width,
+        playerH: player.height,
+      });
+
+      setDeathSpike({
+        tipX: event.tip?.x,
+        tipY: event.tip?.y,
+        side: event.side,
+        region: event.region,
+        bodyPart: event.bodyPart,
+        offsetX: event.offsetX,
+        impact: event.impact,
+        face: hitTop?.face || hitBottom?.face || null,
+        lateral: hitTop?.lateral || hitBottom?.lateral || 0,
+      });
+      setDeathObstacles([...topBoxes, ...bottomBoxes]);
+      deathTypeRef.current = event.type;
+      setDeathType(event.type);
+      setGameState(GAME_STATE.DYING);
+      // score só quando isDead && speed <= 0 por DEATH_ZERO_SPEED_MS
+
+      // ESSENCIAL: continua o loop — sem isso, o gameLoop morre neste
+      // frame e a speed/distância congelam pra sempre no valor da colisão.
+      animationRef.current = requestAnimationFrame(gameLoop);
+      return;
     }
 
     setDrawY(playerY.current);
@@ -614,7 +578,7 @@ function App() {
       // Player já morreu (isDeadRef é setado de forma síncrona no exato
       // frame da colisão — antes até do gameState==DYING propagar no
       // próximo render). A partir daqui nenhum disparo é processado.
-      if (isDeadRef.current || noShootRef.current) {
+      if (isDeadRef.current) {
         return;
       }
 
@@ -758,37 +722,17 @@ function App() {
           <Player
             drawY={drawY}
             shotTick={shotTick}
-            deathType="none"
-            deathSpike={null}
-            deathObstacles={[]}
+            deathType={deathType}
+            deathSpike={deathSpike}
+            deathObstacles={deathObstacles}
             velocityY={velocityY}
             moveSpeed={displaySpeed}
             bloodRef={bloodRef}
             playerX={300}
             hitboxAngleRef={playerAngleRef}
             impactEvent={impactEvent}
-            pinEvent={pinEvent}
-            externalSever={externalSever}
+            onBodySettled={onBodySettled}
           />
-          {/* membros presos nos spikes */}
-          {stuckLimbs.map((s) => (
-            <div
-              key={s.id}
-              style={{
-                position: "absolute",
-                left: s.x - 8,
-                top: s.y - 12,
-                width: 16,
-                height: 24,
-                borderRadius: s.limb.includes("arm") ? 6 : 8,
-                background: s.limb.includes("leg") ? "#5b4cff" : "#3d3d3d",
-                border: "2px solid #222",
-                zIndex: 6,
-                pointerEvents: "none",
-              }}
-              title={s.limb}
-            />
-          ))}
           <BloodLayer
             ref={bloodRef}
             focusX={300 + 24}

@@ -37,11 +37,10 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
   const cx = playerX + (ctx.playerW ?? 36) / 2;
   const cy = playerY + (ctx.playerH ?? 56) * 0.5;
   const distTip = tip ? Math.hypot(cx - tip.x, cy - tip.y) : 999;
-  // tip só se a classificação de colisão disser tip, ou centro bem perto da ponta
   const onTip =
     region === "tip" ||
     face === "tip" ||
-    (distTip < 28 && region !== "base");
+    distTip < 36;
 
   let type = DeathType.FLOP;
 
