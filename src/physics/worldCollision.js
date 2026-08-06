@@ -54,3 +54,34 @@ export function collidePointsWithSpikes(points, obstacles) {
   }
 }
 
+/**
+ * Detecta (sem mudar nada) se alguma parte "âncora" do ragdoll (peito,
+ * cabeça, pés) tocou a PONTA de um espeto novo — ou seja, deveria
+ * empalar de novo. Só checa essas partes (não mãos/joelhos), senão o
+ * corpo fica grudando em qualquer contato de raspão.
+ * @param {{chest:object, head:object, lFoot:object, rFoot:object}} parts
+ * @param {object[]} obstacles
+ * @param {number} tipRadius - distância da ponta que ainda conta como "pegou na ponta"
+ */
+export function findReimpaleCandidate(parts, obstacles, tipRadius = 22) {
+  if (!obstacles?.length) return null;
+  const anchors = [
+    ["chest", parts.chest],
+    ["head", parts.head],
+    ["lFoot", parts.lFoot],
+    ["rFoot", parts.rFoot],
+  ];
+  for (const [partKey, p] of anchors) {
+    if (!p || p.pinned) continue;
+    for (const hb of obstacles) {
+      if (!hb?.points || hb.points.length < 3 || !hb.tip) continue;
+      if (!pointInTriangle(p, hb.points)) continue;
+      const distTip = Math.hypot(p.x - hb.tip.x, p.y - hb.tip.y);
+      if (distTip < tipRadius) {
+        return { partKey, part: p, hb };
+      }
+    }
+  }
+  return null;
+}
+

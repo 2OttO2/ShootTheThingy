@@ -192,11 +192,11 @@ function contactRegion(player, hb) {
   const distBase = Math.hypot(cx - bx, cy - by);
 
   if (hb.side === "bottom") {
-    const tipZone = tip.y + (by - tip.y) * 0.42;
-    if (cy <= tipZone || distTip < distBase * 0.85 || distTip < 38) return "tip";
+    const tipZone = tip.y + (by - tip.y) * 0.52;
+    if (cy <= tipZone || distTip < distBase * 0.9 || distTip < 46) return "tip";
     return "base";
   }
-  if (distTip < 48 || distTip < distBase * 0.85) return "tip";
+  if (distTip < 56 || distTip < distBase * 0.9) return "tip";
   return "base";
 }
 
@@ -222,7 +222,7 @@ function contactFace(player, hb, region) {
     const dx = p.x - tip.x;
     const dy = p.y - tip.y;
     const dist = Math.hypot(dx, dy);
-    if (dist < size * 0.38) {
+    if (dist < size * 0.46) {
       tipHits++;
       continue;
     }

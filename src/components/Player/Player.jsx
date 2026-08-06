@@ -557,6 +557,7 @@ function Player({
       deathType,
       velocityY: velocityRef.current,
       moveSpeed: moveSpeedRef.current,
+      hSpeed: moveSpeedRef.current,
       spin: livingRef.current?.omega ?? 0,
       floorY,
       ceilingY,

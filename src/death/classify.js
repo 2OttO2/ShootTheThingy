@@ -8,6 +8,8 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
   const velocityY = ctx.velocityY ?? 0;
   const playerX = ctx.playerX ?? 300;
   const playerY = ctx.playerY ?? 0;
+  const angle = ctx.angle ?? 0;
+  const hSpeed = ctx.hSpeed ?? 0;
 
   if (!hitTop && !hitBottom) {
     return createDeathEvent({
@@ -15,6 +17,8 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
       playerX,
       playerY,
       velocityY,
+      angle,
+      hSpeed,
     });
   }
 
@@ -40,28 +44,33 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
   const onTip =
     region === "tip" ||
     face === "tip" ||
-    distTip < 36;
+    distTip < 44;
 
   let type = DeathType.FLOP;
 
+  // Prioridade por parte do corpo: cabeça pegando um spike de TETO
+  // pendura; peito/torso empala (chão OU teto); perna empala pela perna.
+  // Isso vale tanto no contato "bem na ponta" quanto no ambíguo — só a
+  // base larga (region === "base") e o flanco (face left/right) fogem
+  // dessa regra.
+  const byBodyPart = () => {
+    if (part === "legs") return DeathType.IMPALE_LEG;
+    if (part === "head" && hit.side === "top") return DeathType.HANG;
+    return DeathType.IMPALE;
+  };
+
   if (onTip) {
-    // PRIORIDADE: ponta empala / pendura
-    if (hit.side === "top") {
-      type = DeathType.HANG;
-    } else if (part === "legs") {
-      type = DeathType.IMPALE_LEG;
-    } else if (part === "head") {
-      // cabeça na ponta de baixo ainda empala pelo peito/pescoço
-      type = DeathType.IMPALE;
-    } else {
-      type = DeathType.IMPALE;
-    }
+    type = byBodyPart();
   } else if (face === "left" || face === "right") {
     type = DeathType.SPIN;
-  } else if (hit.side === "top") {
-    type = region === "base" ? DeathType.BOUNCE : DeathType.HANG;
+  } else if (region === "base") {
+    type = hit.side === "top" ? DeathType.BOUNCE : DeathType.FLOP;
   } else {
-    type = region === "base" ? DeathType.FLOP : DeathType.IMPALE;
+    // contato ambíguo (nem claramente ponta, nem claramente base) —
+    // ainda decide pela parte do corpo, senão peito/perna em espeto de
+    // teto viravam HANG por engano toda vez que a detecção de ponta
+    // não era 100% precisa.
+    type = byBodyPart();
   }
 
   let offsetX = hit.offsetX || 0;
@@ -79,6 +88,8 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
     playerX,
     playerY,
     velocityY,
+    angle,
+    hSpeed,
   });
 }
 
@@ -88,6 +99,8 @@ export function classifyStall(ctx = {}) {
     playerX: ctx.playerX ?? 300,
     playerY: ctx.playerY ?? 0,
     velocityY: ctx.velocityY ?? 0,
+    angle: ctx.angle ?? 0,
+    hSpeed: ctx.hSpeed ?? 0,
   });
 }
 

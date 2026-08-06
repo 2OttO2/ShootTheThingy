@@ -14,7 +14,18 @@ import {
   angleBetween,
   dist,
 } from "./verlet.js";
-import { collidePointsWithSpikes } from "./worldCollision.js";
+import { collidePointsWithSpikes, findReimpaleCandidate } from "./worldCollision.js";
+
+// quanto tempo (segundos) uma parte fica presa num espeto antes de
+// escorregar/soltar por conta da gravidade — depois disso o corpo cai
+// livre de novo e pode ser empalado em OUTRO espeto.
+const PIN_RELEASE_SEC = {
+  head: 1.1, // pendurado pela cabeça (HANG)
+  chest: 1.7, // empalado pelo peito (IMPALE)
+  lFoot: 1.3, // empalado pela perna (IMPALE_LEG)
+  rFoot: 1.3,
+  hip: 1.3,
+};
 
 export function createRagdoll(x, y, opts = {}) {
   const floorY =
@@ -32,6 +43,7 @@ export function createRagdoll(x, y, opts = {}) {
     offsetX: opts.offsetX ?? 0,
     impact: opts.impact ?? 1,
     velocityY: opts.velocityY ?? 0,
+    hSpeed: opts.hSpeed ?? 0,
     playerX: x,
     playerY: y,
     severed: opts.severed ?? {},
@@ -44,20 +56,47 @@ export function createRagdoll(x, y, opts = {}) {
   const meta = applyDeathBehavior(body, event);
   for (const p of body.points) clampV(p);
 
+  const pin = meta.pinnedPartKey
+    ? {
+        partKey: meta.pinnedPartKey,
+        tipX: meta.spikeTipX,
+        tipY: meta.spikeTipY,
+        side: meta.spikeSide,
+        timer: PIN_RELEASE_SEC[meta.pinnedPartKey] ?? 1.3,
+      }
+    : null;
+
   return {
     ...body,
     alive: true,
     deathType: event.type,
     spikeSide: meta.spikeSide,
-    hangTimer: meta.hangTimer,
-    hangReleased: false,
     floorKicked: false,
     spikeTipX: meta.spikeTipX,
     spikeTipY: meta.spikeTipY,
     sideSpin: meta.sideSpin,
-    // hitboxes congeladas no momento da morte
+    pin,
+    // hitboxes dos spikes — atualizadas a cada frame pelo App.jsx (não
+    // ficam congeladas no momento da morte, senão desalinham do mapa
+    // que continua andando)
     obstacles: opts.obstacles ?? [],
   };
+}
+
+function releasePin(ragdoll) {
+  const { parts, sideSpin } = ragdoll;
+  const s = sideSpin || 1;
+  const p = parts[ragdoll.pin.partKey];
+  if (p) unpin(p);
+  ragdoll.pin = null;
+  // escorregão: um empurrão leve na direção do giro, deixando a
+  // gravidade terminar o resto (cair e, quem sabe, empalar de novo)
+  impulse(parts.head, s * 0.5, 1.6);
+  impulse(parts.chest, s * 0.8, 2.2);
+  impulse(parts.hip, s * 1.2, 2.8);
+  if (!ragdoll.severed.armLeft) impulse(parts.lHand, -2, 1.5);
+  if (!ragdoll.severed.armRight) impulse(parts.rHand, 2, 1.5);
+  ragdoll.floorKicked = false; // pode quicar/reagir de novo depois de soltar
 }
 
 export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
@@ -72,50 +111,37 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
   // visualmente do espeto conforme o mapa rola.
   if (moveSpeed > 0) {
     ragdoll.spikeTipX -= (SPIKE_SPEED + moveSpeed) * dtNorm;
+    if (ragdoll.pin) ragdoll.pin.tipX -= (SPIKE_SPEED + moveSpeed) * dtNorm;
   }
 
-  if (ragdoll.deathType === DeathType.HANG) {
-    if (!ragdoll.hangReleased) {
-      ragdoll.hangTimer -= dtSec;
-      setPinned(ragdoll.parts.head, ragdoll.spikeTipX, ragdoll.spikeTipY);
-      if (ragdoll.hangTimer <= 0) {
-        ragdoll.hangReleased = true;
-        unpin(ragdoll.parts.head);
-        const s = ragdoll.sideSpin || 1;
-        impulse(ragdoll.parts.head, s * 0.5, 1.6);
-        impulse(ragdoll.parts.chest, s * 0.8, 2.2);
-        impulse(ragdoll.parts.hip, s * 1.2, 2.8);
-        if (!ragdoll.severed.armLeft) impulse(ragdoll.parts.lHand, -2, 1.5);
-        if (!ragdoll.severed.armRight) impulse(ragdoll.parts.rHand, 2, 1.5);
+  if (ragdoll.pin) {
+    ragdoll.pin.timer -= dtSec;
+    const p = ragdoll.parts[ragdoll.pin.partKey];
+
+    if (ragdoll.pin.partKey === "chest") {
+      // peito empalado escorrega bem devagar ao longo do espeto antes
+      // de soltar de vez (efeito "escorregando pela gravidade")
+      const hip = ragdoll.parts.hip;
+      let targetY = p.y;
+      if (ragdoll.pin.side === "bottom") {
+        targetY = Math.min(p.y + 0.1 * dtNorm, ragdoll.pin.tipY + 34);
+      } else {
+        targetY = Math.min(
+          p.y + 0.06 * dtNorm,
+          Math.max(24, ragdoll.pin.tipY - 4)
+        );
       }
+      setPinned(p, ragdoll.pin.tipX, targetY);
+      hip.x = ragdoll.pin.tipX;
+      hip.y = p.y + 18;
+      hip.ox = hip.x;
+      hip.oy = hip.y;
+    } else if (p) {
+      setPinned(p, ragdoll.pin.tipX, p.y);
     }
-  }
 
-  if (ragdoll.deathType === DeathType.IMPALE) {
-    const c = ragdoll.parts.chest;
-    const hip = ragdoll.parts.hip;
-    let targetY = c.y;
-    if (ragdoll.spikeSide === "bottom") {
-      targetY = Math.min(c.y + 0.1 * dtNorm, ragdoll.spikeTipY + 34);
-    } else {
-      targetY = Math.min(
-        c.y + 0.06 * dtNorm,
-        Math.max(24, ragdoll.spikeTipY - 4)
-      );
-    }
-    setPinned(c, ragdoll.spikeTipX, targetY);
-    hip.x = ragdoll.spikeTipX;
-    hip.y = c.y + 18;
-    hip.ox = hip.x;
-    hip.oy = hip.y;
-  }
-
-  if (ragdoll.deathType === DeathType.IMPALE_LEG) {
-    for (const p of ragdoll.points) {
-      if (p.pinned) {
-        p.x = ragdoll.spikeTipX;
-        p.ox = p.x;
-      }
+    if (ragdoll.pin.timer <= 0) {
+      releasePin(ragdoll);
     }
   }
 
@@ -125,17 +151,39 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
   // global usado por outras coisas.
   stepBody(ragdoll, dtNorm, { scroll: 0, bounce: 0.7 });
 
-  // colisão real com spikes (corpo quica / é empurrado pra fora)
+  // Livre (sem pin) → pode ser empalado de novo se alguma parte-âncora
+  // (peito/cabeça/pé) tocar bem na ponta de um espeto.
+  if (!ragdoll.pin && ragdoll.obstacles?.length) {
+    const candidate = findReimpaleCandidate(ragdoll.parts, ragdoll.obstacles, 22);
+    if (candidate) {
+      setPinned(candidate.part, candidate.hb.tip.x, candidate.hb.tip.y);
+      ragdoll.pin = {
+        partKey: candidate.partKey,
+        tipX: candidate.hb.tip.x,
+        tipY: candidate.hb.tip.y,
+        side: candidate.hb.side,
+        timer: PIN_RELEASE_SEC[candidate.partKey] ?? 1.3,
+      };
+      ragdoll.deathType =
+        candidate.partKey === "head"
+          ? candidate.hb.side === "top"
+            ? DeathType.HANG
+            : DeathType.IMPALE
+          : candidate.partKey === "chest"
+          ? DeathType.IMPALE
+          : DeathType.IMPALE_LEG;
+      ragdoll.floorKicked = false;
+    }
+  }
+
+  // colisão normal com o CORPO dos spikes (não a ponta): corpo quica /
+  // é empurrado pra fora. Pontos já presos (pin, seja o original ou um
+  // reempalamento que acabou de acontecer) são ignorados automaticamente.
   if (ragdoll.obstacles?.length) {
     collidePointsWithSpikes(ragdoll.points, ragdoll.obstacles);
   }
 
-  if (
-    !ragdoll.floorKicked &&
-    ragdoll.deathType !== DeathType.IMPALE &&
-    ragdoll.deathType !== DeathType.IMPALE_LEG &&
-    ragdoll.parts.hip.y >= ragdoll.floorY - 10
-  ) {
+  if (!ragdoll.floorKicked && !ragdoll.pin && ragdoll.parts.hip.y >= ragdoll.floorY - 10) {
     ragdoll.floorKicked = true;
     floorKick(ragdoll, ragdoll.sideSpin);
   }

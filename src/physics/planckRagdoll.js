@@ -146,6 +146,23 @@ function addSpikeObstacles(world, obstacles, focusX = 320, focusY = 300) {
   return spikeBodies;
 }
 
+/**
+ * Recria os corpos estáticos dos spikes com as posições ATUAIS (os
+ * spikes continuam andando depois da morte, então as posições
+ * congeladas no momento da criação do ragdoll ficam erradas rapidinho).
+ * Chamado periodicamente pelo stepRagdoll.
+ */
+function resyncSpikeObstacles(ragdoll) {
+  const world = ragdoll.world;
+  for (const b of ragdoll.spikeBodies || []) {
+    try {
+      world.destroyBody(b);
+    } catch (_) {}
+  }
+  const focus = ragdoll.bodies?.hip?.getPosition?.() ?? { x: ragdoll.spikeTipX, y: ragdoll.spikeTipY };
+  ragdoll.spikeBodies = addSpikeObstacles(world, ragdoll.obstacles ?? [], focus.x, focus.y);
+}
+
 
 /** Destroi joints ligados a um body (planck joint list). */
 function destroyBodyJoints(world, body) {
@@ -404,7 +421,7 @@ export function createRagdoll(x, y, opts = {}) {
   world.createBody().createFixture(Edge(Vec2(16, -200), Vec2(16, floorY + 50)));
   world.createBody().createFixture(Edge(Vec2(maxX, -200), Vec2(maxX, floorY + 50)));
 
-  addSpikeObstacles(world, opts.obstacles ?? [], x + 24, y + 32);
+  const initialSpikeBodies = addSpikeObstacles(world, opts.obstacles ?? [], x + 24, y + 32);
 
   // SEMPRE spawna onde o player morreu — zero teleporte pra ponta
   let hx = x + 24;
@@ -629,6 +646,9 @@ export function createRagdoll(x, y, opts = {}) {
     spikeTipY: tipY,
     severed: sev,
     onBlood: opts.onBlood || null,
+    spikeBodies: initialSpikeBodies,
+    obstacles: opts.obstacles ?? [],
+    resyncTimer: 0,
     bodies: {
       head,
       chest,
@@ -682,8 +702,22 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
 
   const dtSec = Math.min(0.032, (dtNorm * 16.67) / 1000);
 
-  // NÃO arrasta pin/corpos com o scroll — isso sugava o body pro canto esquerdo.
-  // Spikes congelam na morte (App); pin fica fixo na tela.
+  // Os spikes-obstáculo do mundo físico (Planck) são criados uma vez, na
+  // hora da morte, mas os espetos de verdade continuam andando na tela
+  // depois disso (App.jsx). Sem isso, o corpo fica flutuando num mundo
+  // com espetos "fantasmas" parados no lugar antigo — colisão nunca
+  // mais acontece com nenhum espeto novo que passe por ele.
+  ragdoll.resyncTimer = (ragdoll.resyncTimer || 0) + dtSec;
+  if (ragdoll.resyncTimer > 0.12) {
+    ragdoll.resyncTimer = 0;
+    resyncSpikeObstacles(ragdoll);
+  }
+
+  // NÃO arrasta pin/corpos do ragdoll pelo eixo X com o scroll do mapa —
+  // isso sugava o corpo pro canto esquerdo. Os espetos de verdade (e os
+  // corpos físicos deles no Planck, via resyncSpikeObstacles acima)
+  // continuam andando; é a colisão que reencontra o corpo, não o
+  // contrário.
 
   const steps = dtSec > 0.02 ? 2 : 1;
   const h = dtSec / steps;
@@ -714,6 +748,8 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
     const limit = ragdoll.breakForce || 400;
     if (ragdoll.hangTimer > minHold && mag > limit) {
       ragdoll.hangReleased = true;
+      // solta de vez: permite reagir/empalar de novo em outro spike
+      ragdoll.secondaryImpale = false;
       try {
         ragdoll.world.destroyJoint(ragdoll.pinJoint);
       } catch (_) {}
@@ -723,6 +759,7 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
     // segurança: se ficou preso demais, solta
     if (ragdoll.hangTimer > 2.8 && ragdoll.pinJoint) {
       ragdoll.hangReleased = true;
+      ragdoll.secondaryImpale = false;
       try {
         ragdoll.world.destroyJoint(ragdoll.pinJoint);
       } catch (_) {}

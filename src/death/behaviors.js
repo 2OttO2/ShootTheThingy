@@ -8,13 +8,22 @@ export function applyDeathBehavior(body, event) {
   const tipX = event.tip?.x ?? event.playerX + 24;
   const tipY = event.tip?.y ?? event.playerY + 40;
   const sideSpin = (event.offsetX ?? 0) >= 0 ? 1 : -1;
-  const imp = Math.max(0.85, Math.min(1.7, event.impact ?? 1));
+  // intensidade do impacto: combina a força já calculada (velocidade
+  // vertical na hora da colisão) com a velocidade do jogo (hSpeed) —
+  // quanto mais rápido o jogo tá indo, mais violenta a reação.
+  const hFactor = 1 + Math.min(0.6, (event.hSpeed ?? 0) / 12);
+  const imp = Math.max(0.85, Math.min(2.4, (event.impact ?? 1) * hFactor));
+  // fator vertical — antes só o X escalava com o impacto, agora o Y
+  // também, pra reação inteira (não só horizontal) responder à força
   const fall = Math.max(
     0.7,
-    Math.min(2.8, Math.abs(event.velocityY ?? 0) * 0.1 + 0.9)
+    Math.min(2.8, Math.abs(event.velocityY ?? 0) * 0.1 + 0.9) * hFactor
   );
+  // sinal da queda: caindo rápido (vy>0) vs quase parado/subindo — usado
+  // pra decidir se o corpo "alavanca" com força ou só tomba devagar
+  const fallSign = (event.velocityY ?? 0) >= 0 ? 1 : -1;
   const spikeSide = event.side || "bottom";
-  let hangTimer = 0;
+  let pinnedPartKey = null; // qual parte ficou presa no espeto (se alguma)
 
   const { head, chest, hip, lHand, rHand, lKnee, rKnee, lFoot, rFoot } = parts;
 
@@ -28,19 +37,19 @@ export function applyDeathBehavior(body, event) {
       zeroVel(chest);
       zeroVel(hip);
       layoutLimbs(parts, sev, sideSpin);
-      impulse(chest, sideSpin * 0.9 * imp, 0.2);
-      impulse(hip, sideSpin * 1.4 * imp, 0.8);
+      impulse(chest, sideSpin * 0.9 * imp, 0.2 * fall);
+      impulse(hip, sideSpin * 1.4 * imp, 0.8 * fall);
       if (!sev.legLeft) {
-        impulse(lKnee, -sideSpin * 1.0, 1.0);
-        impulse(lFoot, -sideSpin * 1.6 * imp, 1.5);
+        impulse(lKnee, -sideSpin * 1.0 * fall, 1.0 * fall);
+        impulse(lFoot, -sideSpin * 1.6 * imp, 1.5 * fall);
       }
       if (!sev.legRight) {
-        impulse(rKnee, sideSpin * 1.0, 1.0);
-        impulse(rFoot, sideSpin * 1.6 * imp, 1.5);
+        impulse(rKnee, sideSpin * 1.0 * fall, 1.0 * fall);
+        impulse(rFoot, sideSpin * 1.6 * imp, 1.5 * fall);
       }
-      if (!sev.armLeft) impulse(lHand, -1.4 * imp, 0.8);
-      if (!sev.armRight) impulse(rHand, 1.4 * imp, 0.8);
-      hangTimer = 1.1;
+      if (!sev.armLeft) impulse(lHand, -1.4 * imp, 0.8 * fall);
+      if (!sev.armRight) impulse(rHand, 1.4 * imp, 0.8 * fall);
+      pinnedPartKey = "head";
       break;
     }
     case DeathType.IMPALE: {
@@ -54,27 +63,35 @@ export function applyDeathBehavior(body, event) {
       zeroVel(hip);
       layoutLimbs(parts, sev, sideSpin);
       if (!sev.legLeft) {
-        impulse(lKnee, -1.6 * imp, 1.0);
-        impulse(lFoot, -2.2 * imp, 1.4);
+        impulse(lKnee, -1.6 * imp, 1.0 * fall);
+        impulse(lFoot, -2.2 * imp, 1.4 * fall);
       }
       if (!sev.legRight) {
-        impulse(rKnee, 1.6 * imp, 1.0);
-        impulse(rFoot, 2.2 * imp, 1.4);
+        impulse(rKnee, 1.6 * imp, 1.0 * fall);
+        impulse(rFoot, 2.2 * imp, 1.4 * fall);
       }
-      if (!sev.armLeft) impulse(lHand, -1.8 * imp, 0.7);
-      if (!sev.armRight) impulse(rHand, 1.8 * imp, 0.7);
-      impulse(head, -sideSpin * 1.0 * imp, -0.3);
+      if (!sev.armLeft) impulse(lHand, -1.8 * imp, 0.7 * fall);
+      if (!sev.armRight) impulse(rHand, 1.8 * imp, 0.7 * fall);
+      impulse(head, -sideSpin * 1.0 * imp, -0.3 * fall);
+      pinnedPartKey = "chest";
       break;
     }
     case DeathType.IMPALE_LEG: {
       layoutLimbs(parts, sev, sideSpin);
-      const pin = !sev.legLeft ? lFoot : !sev.legRight ? rFoot : hip;
+      const pinLeft = !sev.legLeft;
+      const pinKey = pinLeft ? "lFoot" : !sev.legRight ? "rFoot" : "hip";
+      const pin = pinLeft ? lFoot : !sev.legRight ? rFoot : hip;
       setPinned(pin, tipX, tipY + (spikeSide === "bottom" ? 4 : 0));
-      impulse(head, sideSpin * 1.8 * imp, 1.2);
-      impulse(chest, sideSpin * 1.4 * imp, 1.4);
-      impulse(hip, sideSpin * 0.6 * imp, 0.5);
-      if (!sev.armLeft) impulse(lHand, -1.5 * imp, 1.4);
-      if (!sev.armRight) impulse(rHand, 1.5 * imp, 1.4);
+      // ALAVANCAGEM: o corpo pivota em torno do pé preso. Quanto mais
+      // rápido caindo (fallSign/fall), mais forte o giro; a direção do
+      // giro depende de que lado do espeto o pé bateu (sideSpin).
+      const lever = sideSpin * fallSign * fall;
+      impulse(head, lever * 1.8 * imp, 1.2 * fall);
+      impulse(chest, lever * 1.4 * imp, 1.4 * fall);
+      impulse(hip, lever * 0.6 * imp, 0.5 * fall);
+      if (!sev.armLeft) impulse(lHand, -lever * 1.2 * imp, 1.4 * fall);
+      if (!sev.armRight) impulse(rHand, lever * 1.2 * imp, 1.4 * fall);
+      pinnedPartKey = pinKey;
       break;
     }
     case DeathType.BOUNCE: {
@@ -83,8 +100,8 @@ export function applyDeathBehavior(body, event) {
       impulse(head, sideSpin * 1.2 * imp, away * 2.0 * imp + fall * 0.25);
       impulse(chest, sideSpin * 0.9 * imp, away * 2.3 * imp);
       impulse(hip, sideSpin * 0.7 * imp, away * 1.7 * imp);
-      if (!sev.legLeft) impulse(lFoot, -sideSpin * 1.5, away * 1.2);
-      if (!sev.legRight) impulse(rFoot, sideSpin * 1.5, away * 1.2);
+      if (!sev.legLeft) impulse(lFoot, -sideSpin * 1.5 * imp, away * 1.2 * fall);
+      if (!sev.legRight) impulse(rFoot, sideSpin * 1.5 * imp, away * 1.2 * fall);
       break;
     }
     case DeathType.SPIN: {
@@ -99,19 +116,19 @@ export function applyDeathBehavior(body, event) {
     }
     case DeathType.FLOP: {
       layoutLimbs(parts, sev, sideSpin);
-      impulse(head, sideSpin * 0.6, fall);
-      impulse(chest, sideSpin * 0.15, fall * 0.9);
-      impulse(hip, -sideSpin * 0.45, fall);
+      impulse(head, sideSpin * 0.6 * imp, fall);
+      impulse(chest, sideSpin * 0.15 * imp, fall * 0.9);
+      impulse(hip, -sideSpin * 0.45 * imp, fall);
       if (!sev.legLeft) {
-        impulse(lKnee, 1.1 * imp, -0.3);
-        impulse(lFoot, 1.6 * imp, -0.8);
+        impulse(lKnee, 1.1 * imp, -0.3 * fall);
+        impulse(lFoot, 1.6 * imp, -0.8 * fall);
       }
       if (!sev.legRight) {
-        impulse(rKnee, -1.2 * imp, -0.4);
-        impulse(rFoot, -1.7 * imp, -0.9);
+        impulse(rKnee, -1.2 * imp, -0.4 * fall);
+        impulse(rFoot, -1.7 * imp, -0.9 * fall);
       }
-      if (!sev.armLeft) impulse(lHand, -1.5 * imp, 1.1);
-      if (!sev.armRight) impulse(rHand, 1.6 * imp, 1.0);
+      if (!sev.armLeft) impulse(lHand, -1.5 * imp, 1.1 * fall);
+      if (!sev.armRight) impulse(rHand, 1.6 * imp, 1.0 * fall);
       break;
     }
     case DeathType.STALL:
@@ -127,7 +144,7 @@ export function applyDeathBehavior(body, event) {
   }
 
   return {
-    hangTimer,
+    pinnedPartKey,
     sideSpin,
     spikeTipX: tipX,
     spikeTipY: tipY,

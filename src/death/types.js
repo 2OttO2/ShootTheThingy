@@ -26,6 +26,7 @@ export const DeathType = {
  * @property {number} playerX
  * @property {number} playerY
  * @property {number} velocityY
+ * @property {number} angle - ângulo do corpo (radianos) no momento do impacto
  * @property {object} [severed]
  */
 
@@ -42,6 +43,8 @@ export function createDeathEvent(partial = {}) {
     playerX: 300,
     playerY: 0,
     velocityY: 0,
+    angle: 0,
+    hSpeed: 0,
     severed: null,
     ...partial,
   };

@@ -27,6 +27,7 @@ import {
   MOMENTUM_GAIN,
   MOMENTUM_DECAY,
   GRAVITY,
+  SPIKE_SIZE,
   JUMP_FORCE,
   BOUNCE,
   BOUNCE_SPEED_LOSS,
@@ -318,19 +319,14 @@ function App() {
     // hitboxes de debug (e as usadas na colisão do corpo morto com os
     // spikes) sempre acompanham a posição atual deles, vivo ou morto —
     // senão desalinham quando o mapa continua andando depois da morte.
-    // Culling pela posição do player, senão manda a tela inteira de
-    // spikes pro ragdoll testar ponto-a-ponto a cada frame (pesado e
-    // pode causar empurrões vindos de espetos longe do corpo).
-    const rawSpikeHitboxes = [
+    // Filtro só por visibilidade em tela (não pela posição do player —
+    // essa trava depois da morte, já que playerY.current para de ser
+    // atualizado, o que fazia a colisão "desligar" assim que o corpo se
+    // afastava do ponto onde morreu).
+    const currentSpikeHitboxes = [
       ...createSpikeHitboxes(spikesRef.current.top, "top"),
       ...createSpikeHitboxes(spikesRef.current.bottom, "bottom"),
-    ];
-    const currentSpikeHitboxes = cullSpikeHitboxes(rawSpikeHitboxes, {
-      focusX: 300 + 24,
-      focusY: playerY.current + 32,
-      focusRadius: 260,
-      margin: 64,
-    });
+    ].filter((hb) => hb.x > -SPIKE_SIZE * 2 && hb.x < window.innerWidth + SPIKE_SIZE * 2);
     setDebugHitboxes(currentSpikeHitboxes);
     if (isDeadRef.current) {
       setDeathObstacles(currentSpikeHitboxes);
@@ -430,6 +426,8 @@ function App() {
           velocityY: speed.current,
           playerX: 300,
           playerY: playerY.current,
+          angle: playerAngleRef.current || 0,
+          hSpeed: gameSpeed.current,
         });
         deathTypeRef.current = stallEvent.type;
         setDeathType(stallEvent.type);
@@ -513,6 +511,8 @@ function App() {
         playerY: player.y,
         playerW: player.width,
         playerH: player.height,
+        angle: playerAngleRef.current || 0,
+        hSpeed: gameSpeed.current,
       });
 
       setDeathSpike({
