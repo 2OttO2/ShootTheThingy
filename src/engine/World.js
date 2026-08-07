@@ -10,7 +10,7 @@
  * spike) — só entrega os fatos físicos (quem colidiu, normal, impacto).
  * Quem decide é o código de jogo, ouvindo esses eventos.
  */
-import { World as PlanckWorld, Vec2, Settings } from "planck-js";
+import { World as PlanckWorld, Vec2, Settings } from "planck";
 import RigidBody from "./RigidBody.js";
 import { createShape } from "./Shapes.js";
 import CollisionSolver from "./CollisionSolver.js";

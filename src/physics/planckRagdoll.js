@@ -13,7 +13,7 @@ import {
   WeldJoint,
   DistanceJoint,
   Settings,
-} from "planck-js";
+} from "planck";
 import { DeathType } from "../death/types.js";
 import { SpatialHash } from "../utils/spatialHash.js";
 

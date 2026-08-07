@@ -3,7 +3,7 @@
  * Usado só internamente por World.js — o resto do jogo nunca importa
  * planck-js diretamente, só descreve a forma que quer.
  */
-import { Box, Circle, Polygon, Edge, Vec2 } from "planck-js";
+import { Box, Circle, Polygon, Edge, Vec2 } from "planck";
 
 /**
  * @param {object} spec
