@@ -501,8 +501,6 @@ function App() {
 
     if (hitTop || hitBottom) {
       isDeadRef.current = true;
-      // NÃO zera momentum — mapa desacelera junto com a speed residual
-      setDisplaySpeed(gameSpeed.current);
 
       // Classificação única em death/classify.js — passa contexto rico
       // (membro fino, ponto de contato, velocidades) para a reação física.
@@ -517,6 +515,24 @@ function App() {
         angularVelocity: 0,
         hSpeed: gameSpeed.current,
       });
+
+      // Empalado = personagem parado no espeto → câmera/mapa param.
+      // Sensação: era o personagem que andava; ao cravar, tudo para.
+      // Cabeça/torso: speed 0 imediato (impacto que trava o corpo).
+      // Membro (pé/braço): também zera — preso no ferro não arrasta o mapa.
+      const pinnedDeath =
+        event.type === DeathType.HANG ||
+        event.type === DeathType.IMPALE ||
+        event.type === DeathType.IMPALE_LEG ||
+        event.region === "tip";
+      if (pinnedDeath) {
+        momentum.current = 0;
+        gameSpeed.current = 0;
+        setDisplaySpeed(0);
+      } else {
+        // FLOP / SPIN / BOUNCE: deixa decair naturalmente
+        setDisplaySpeed(gameSpeed.current);
+      }
 
       const primaryHit = hitBottom || hitTop;
       setDeathSpike({
@@ -542,7 +558,8 @@ function App() {
       deathTypeRef.current = event.type;
       setDeathType(event.type);
       setGameState(GAME_STATE.DYING);
-      // score só quando isDead && speed <= 0 por DEATH_ZERO_SPEED_MS
+      // score quando isDead && speed <= 0 por DEATH_ZERO_SPEED_MS
+      // (com pin, speed já é 0 → timer começa na hora)
 
       // ESSENCIAL: continua o loop — sem isso, o gameLoop morre neste
       // frame e a speed/distância congelam pra sempre no valor da colisão.

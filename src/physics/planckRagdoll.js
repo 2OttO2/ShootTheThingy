@@ -589,86 +589,69 @@ export function createRagdoll(x, y, opts = {}) {
 
   if (canPin) {
     attachBody = pickAttach(bodyPart);
-    // se o membro escolhido não existe (severed), cai pro peito
     if (!attachBody) attachBody = chest;
   }
 
-  // Profundidade da perfuração: membro entra no corpo do spike
-  // (espinho de ferro atravessando a carne)
+  // Membro entra ~18px no corpo do spike (espinho atravessando)
   const EMBED_DEPTH = 18;
 
   function embedPoint(tx, ty, side) {
-    // bottom: ponta pra cima → enfia pra baixo (+y)
-    // top: ponta pra baixo → enfia pra cima (-y)
     if (side === "top") return { x: tx, y: ty - EMBED_DEPTH };
     return { x: tx, y: ty + EMBED_DEPTH };
   }
 
-  // index do spike que perfurou (para acompanhar o tip certo no scroll)
   const pinSpikeIndex =
     opts.spikeIndex ?? opts.event?.spikeIndex ?? opts.index ?? null;
 
   if (attachBody) {
-    const attachName =
-      (attachBody.getUserData && attachBody.getUserData()?.name) || bodyPart;
-
     const emb = embedPoint(tipX, tipY, spikeSide);
     const pinX = emb.x;
     const pinY = emb.y;
 
-    // Posiciona o corpo uma vez: membro na profundidade de perfuração
-    seatWholeBodyOnTip(attachBody, attachName, pinX, pinY);
+    // 1) Coloca o membro ENFIADO no spike (corpo inteiro desloca junto)
+    seatWholeBodyOnTip(attachBody, null, pinX, pinY);
 
+    // 2) Pin estático no ponto de perfuração
     pinBody = world.createBody({ type: "static", position: Vec2(pinX, pinY) });
 
-    // DistanceJoint curto e rígido: membro preso, corpo livre para pivotar.
-    // (Weld + setTransform todo frame matava a física — era o bug visual.)
+    // 3) Weld = preso de verdade (sem mola). O resto do esqueleto
+    //    continua com revolute joints → gira em torno do membro.
     pinJoint = world.createJoint(
-      DistanceJoint({
+      WeldJoint({
         bodyA: pinBody,
         bodyB: attachBody,
         localAnchorA: Vec2(0, 0),
         localAnchorB: Vec2(0, 0),
-        length: 4,
-        frequencyHz: 12,
-        dampingRatio: 0.9,
+        referenceAngle: 0,
         collideConnected: false,
       })
     );
     hangReleased = false;
 
-    breakForce = 1000 + absVy * 22 + spd * 16;
-    if (spikeSide === "top") breakForce *= 0.85;
+    // break alto + tempo mínimo longo = empalar visível
+    breakForce = 2500 + absVy * 30 + spd * 20;
   }
 
-  // Velocidade herdada do arcade — o corpo livre carrega inércia;
-  // o membro pinado fica quase parado na ponta (pivô).
+  // Inércia só no corpo LIVRE (não no membro pinado).
+  // Vx reduzido: o scroll do spike arrasta o corpo via pin follow,
+  // não precisamos de um empurrão enorme que estoura o joint.
   {
-    const carryVy = (velocityY || 0) * 30;
-    const carryVx = 35 + Math.abs(opts.moveSpeed || opts.hSpeed || 0) * 16;
-    const spin = (opts.spin || 0) * 0.9;
+    const carryVy = (velocityY || 0) * 18;
+    const carryVx = 8 + Math.abs(opts.moveSpeed || opts.hSpeed || 0) * 4;
+    const spin = (opts.spin || 0) * 0.5;
     const allBodies = [
       head, chest, hip, lShoulder, rShoulder,
       lHand, rHand, lKnee, rKnee, lFoot, rFoot,
     ].filter(Boolean);
 
-    let nudgeX = 0;
-    let nudgeY = 0;
-    if (surfaceNormal && region === "tip" && impactSpeed > 2) {
-      const nScale = Math.min(40, 8 + impactSpeed * 1.2);
-      nudgeX = -surfaceNormal.x * nScale * 0.35;
-      nudgeY = -surfaceNormal.y * nScale * 0.25;
-    }
-
     for (const b of allBodies) {
       if (attachBody && b === attachBody) {
-        // membro preso: quase sem velocidade linear (é o pivô)
-        b.setLinearVelocity(Vec2(carryVx * 0.08, carryVy * 0.08));
+        b.setLinearVelocity(Vec2(0, 0));
+        b.setAngularVelocity(0);
         continue;
       }
       const cur = b.getLinearVelocity();
-      const vx = Math.max(cur.x, 0) + carryVx + nudgeX;
-      b.setLinearVelocity(Vec2(vx, cur.y + carryVy + nudgeY));
+      b.setLinearVelocity(Vec2(cur.x + carryVx, cur.y + carryVy));
       if (spin) b.setAngularVelocity(b.getAngularVelocity() + spin);
     }
   }
@@ -762,9 +745,8 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
     resyncSpikeObstacles(ragdoll);
   }
 
-  // PERFURAÇÃO: só o pinBody estático segue a ponta do spike.
-  // O membro é puxado pelo DistanceJoint — a física do corpo continua
-  // (pivô, gravidade, inércia). NÃO teleportar attachBody todo frame.
+  // PERFURAÇÃO: o spike anda → arrasta o corpo inteiro junto (delta X/Y).
+  // Traduz pin + todos os bodies pelo mesmo delta = parece espetado no ferro.
   if (ragdoll.pinBody && ragdoll.pinJoint && !ragdoll.hangReleased) {
     const side = ragdoll.pinFollowSide || ragdoll.spikeSide || "bottom";
     const depth = ragdoll.pinEmbedDepth ?? 18;
@@ -775,7 +757,6 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
 
     for (const hb of obstacles) {
       if (!hb?.tip || hb.side !== side) continue;
-      // prioriza o mesmo index do spike que perfurou
       if (wantIndex != null && hb.index === wantIndex) {
         bestTip = hb.tip;
         bestD = 0;
@@ -789,22 +770,39 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
       }
     }
 
-    if (bestTip && bestD < 120) {
+    if (bestTip && bestD < 200) {
       const embY = side === "top" ? bestTip.y - depth : bestTip.y + depth;
+      const embX = bestTip.x;
       try {
-        ragdoll.pinBody.setTransform(Vec2(bestTip.x, embY), 0);
+        const prev = ragdoll.pinBody.getPosition();
+        const dx = embX - prev.x;
+        const dy = embY - prev.y;
+        // move o pin
+        ragdoll.pinBody.setTransform(Vec2(embX, embY), 0);
+        // arrasta TODO o ragdoll pelo mesmo delta (fica colado no spike)
+        if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+          const bodies = ragdoll.bodies || {};
+          for (const key of Object.keys(bodies)) {
+            const b = bodies[key];
+            if (!b) continue;
+            const p = b.getPosition();
+            b.setTransform(Vec2(p.x + dx, p.y + dy), b.getAngle());
+          }
+        }
+        // garante membro colado no ponto de perfuração
+        if (ragdoll.attachBody) {
+          ragdoll.attachBody.setTransform(
+            Vec2(embX, embY),
+            ragdoll.attachBody.getAngle()
+          );
+          ragdoll.attachBody.setLinearVelocity(Vec2(0, 0));
+        }
         ragdoll.spikeTipX = bestTip.x;
         ragdoll.spikeTipY = bestTip.y;
         ragdoll.pinFollowTipX = bestTip.x;
       } catch (_) {}
-    } else if (bestD >= 120 || !bestTip) {
-      // spike saiu da tela / sumiu → solta o pin
-      ragdoll.hangReleased = true;
-      try {
-        ragdoll.world.destroyJoint(ragdoll.pinJoint);
-      } catch (_) {}
-      ragdoll.pinJoint = null;
     }
+    // NÃO solta só porque o tip sumiu um frame — espera o timer
   }
 
   const steps = dtSec > 0.02 ? 2 : 1;
@@ -813,37 +811,27 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
     ragdoll.world.step(h, VEL_ITERS, POS_ITERS);
   }
 
-  // ruptura emergente do engate (força da joint × velocidade)
+  // Ruptura do pin: só depois de tempo mínimo generoso
   if (ragdoll.pinJoint && !ragdoll.hangReleased) {
+    ragdoll.hangTimer = (ragdoll.hangTimer || 0) + dtSec;
+    const minHold = 1.4; // empalar visível pelo menos ~1.4s
+    const maxHold = 4.0;
+
     let mag = 0;
     try {
       const invDt = 1 / Math.max(dtSec, 1 / 120);
       const rf = ragdoll.pinJoint.getReactionForce(invDt);
       mag = Math.hypot(rf.x, rf.y);
     } catch (_) {
-      // fallback: tensão pela distância
-      if (ragdoll.pinBody && ragdoll.attachBody) {
-        const a = ragdoll.pinBody.getPosition();
-        const b = ragdoll.attachBody.getPosition();
-        const d = Math.hypot(b.x - a.x, b.y - a.y);
-        const v = ragdoll.attachBody.getLinearVelocity();
-        mag = d * 40 + Math.hypot(v.x, v.y) * 8;
-      }
+      mag = 0;
     }
-    // tempo mínimo para o pivô ser visível antes de poder soltar
-    ragdoll.hangTimer = (ragdoll.hangTimer || 0) + dtSec;
-    const minHold = 0.35;
-    const limit = ragdoll.breakForce || 500;
-    if (ragdoll.hangTimer > minHold && mag > limit) {
-      ragdoll.hangReleased = true;
-      ragdoll.secondaryImpale = false;
-      try {
-        ragdoll.world.destroyJoint(ragdoll.pinJoint);
-      } catch (_) {}
-      ragdoll.pinJoint = null;
-    }
-    // segurança: solta após alguns segundos mesmo se a força não estourar
-    if (ragdoll.hangTimer > 3.2 && ragdoll.pinJoint) {
+
+    const limit = ragdoll.breakForce || 2500;
+    const shouldBreak =
+      (ragdoll.hangTimer > minHold && mag > limit) ||
+      ragdoll.hangTimer > maxHold;
+
+    if (shouldBreak) {
       ragdoll.hangReleased = true;
       ragdoll.secondaryImpale = false;
       try {
