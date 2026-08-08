@@ -70,25 +70,51 @@ function rotateLocal(lx, ly, ang, cx, cy) {
   };
 }
 
-/** Grid de pontos no retângulo local, rotacionado com o corpo */
-function samplePlayerPoints(player) {
+/**
+ * Zonas do corpo em espaço local (origem = centro do player).
+ * Usadas para colisão precisa membro×spike.
+ * ly negativo = cabeça.
+ */
+const BODY_ZONES = [
+  { part: "head", lx0: -0.28, lx1: 0.28, ly0: -0.5, ly1: -0.28 },
+  { part: "chest", lx0: -0.32, lx1: 0.32, ly0: -0.28, ly1: -0.02 },
+  { part: "hip", lx0: -0.3, lx1: 0.3, ly0: -0.02, ly1: 0.14 },
+  { part: "lShoulder", lx0: -0.5, lx1: -0.28, ly0: -0.28, ly1: -0.08 },
+  { part: "rShoulder", lx0: 0.28, lx1: 0.5, ly0: -0.28, ly1: -0.08 },
+  { part: "lHand", lx0: -0.55, lx1: -0.28, ly0: -0.08, ly1: 0.18 },
+  { part: "rHand", lx0: 0.28, lx1: 0.55, ly0: -0.08, ly1: 0.18 },
+  { part: "lKnee", lx0: -0.32, lx1: -0.02, ly0: 0.14, ly1: 0.32 },
+  { part: "rKnee", lx0: 0.02, lx1: 0.32, ly0: 0.14, ly1: 0.32 },
+  { part: "lFoot", lx0: -0.34, lx1: -0.02, ly0: 0.32, ly1: 0.5 },
+  { part: "rFoot", lx0: 0.02, lx1: 0.34, ly0: 0.32, ly1: 0.5 },
+];
+
+/** Amostras rotuladas por membro (colisão precisa). */
+function samplePlayerPointsLabeled(player) {
   const w = player.width;
   const h = player.height;
   const { x: cx, y: cy } = playerCenter(player);
   const ang = playerAngle(player);
   const pts = [];
-  for (let iy = 0; iy <= 3; iy++) {
-    for (let ix = 0; ix <= 2; ix++) {
-      const lx = -w * 0.5 + (w * ix) / 2;
-      const ly = -h * 0.5 + (h * iy) / 3;
-      pts.push(rotateLocal(lx, ly, ang, cx, cy));
+  for (const z of BODY_ZONES) {
+    // 2×2 amostras por zona
+    for (let iy = 0; iy <= 1; iy++) {
+      for (let ix = 0; ix <= 1; ix++) {
+        const fx = ix === 0 ? 0.3 : 0.7;
+        const fy = iy === 0 ? 0.3 : 0.7;
+        const lx = (z.lx0 + (z.lx1 - z.lx0) * fx) * w;
+        const ly = (z.ly0 + (z.ly1 - z.ly0) * fy) * h;
+        const p = rotateLocal(lx, ly, ang, cx, cy);
+        pts.push({ x: p.x, y: p.y, part: z.part });
+      }
     }
   }
-  pts.push({ x: cx, y: cy });
-  // extremos cabeça / pés no eixo local Y
-  pts.push(rotateLocal(0, -h * 0.5, ang, cx, cy));
-  pts.push(rotateLocal(0, h * 0.5, ang, cx, cy));
   return pts;
+}
+
+/** Grid denso legado (sem label) — usado em faces/região. */
+function samplePlayerPoints(player) {
+  return samplePlayerPointsLabeled(player).map((p) => ({ x: p.x, y: p.y }));
 }
 
 function playerCorners(player) {
@@ -263,44 +289,129 @@ function contactFace(player, hb, region) {
   return "tip";
 }
 
+/**
+ * Colisão precisa: vota qual zona do corpo tem mais pontos
+ * dentro do triângulo do spike. Empate → ponto mais próximo da ponta.
+ */
 function classifyBodyPart(player, hb) {
-  if (!hb?.tip) return "torso";
-  const samples = samplePlayerPoints(player);
-  const inside = samples.filter((p) => pointInTriangle(p, hb.points));
-  if (!inside.length) return "torso";
+  if (!hb?.tip) return "chest";
+  const labeled = samplePlayerPointsLabeled(player);
+  const inside = labeled.filter((p) => pointInTriangle(p, hb.points));
+  const tip = hb.tip;
 
-  // eixo local do player: ly negativo = cabeça
+  if (inside.length) {
+    const votes = {};
+    let bestPart = null;
+    let bestVotes = -1;
+    let bestDist = Infinity;
+    for (const p of inside) {
+      const part = p.part || "chest";
+      votes[part] = (votes[part] || 0) + 1;
+      const d = Math.hypot(p.x - tip.x, p.y - tip.y);
+      if (
+        votes[part] > bestVotes ||
+        (votes[part] === bestVotes && d < bestDist)
+      ) {
+        bestVotes = votes[part];
+        bestPart = part;
+        bestDist = d;
+      }
+    }
+    if (bestPart) return bestPart;
+  }
+
+  // fallback: zona cujo centro local está mais perto da ponta
   const { x: cx, y: cy } = playerCenter(player);
   const ang = playerAngle(player);
-  const c = Math.cos(-ang);
-  const s = Math.sin(-ang);
-  let avgLy = 0;
-  for (const p of inside) {
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const ly = dx * s + dy * c; // local Y
-    avgLy += ly;
-  }
-  avgLy /= inside.length;
+  const w = player.width || 36;
   const h = player.height || 56;
-  if (avgLy < -h * 0.22) return "head";
-  if (avgLy > h * 0.18) return "legs";
-  return "torso";
+  let nearest = "chest";
+  let nearestD = Infinity;
+  for (const z of BODY_ZONES) {
+    const lx = ((z.lx0 + z.lx1) / 2) * w;
+    const ly = ((z.ly0 + z.ly1) / 2) * h;
+    const p = rotateLocal(lx, ly, ang, cx, cy);
+    const d = Math.hypot(p.x - tip.x, p.y - tip.y);
+    if (d < nearestD) {
+      nearestD = d;
+      nearest = z.part;
+    }
+  }
+  return nearest;
+}
+
+/**
+ * Ponto de contato aproximado: média dos sample points do player
+ * que estão dentro do triângulo, ou projeção no tip se vazio.
+ */
+function estimateContactPoint(player, hb) {
+  const tip = hb.tip || (hb.points && hb.points[0]);
+  if (!tip) {
+    const { x, y } = playerCenter(player);
+    return { x, y };
+  }
+  const samples = samplePlayerPoints(player);
+  const inside = samples.filter((p) => pointInTriangle(p, hb.points));
+  if (!inside.length) {
+    // fallback: ponto do player mais próximo do tip
+    let best = samples[0] || tip;
+    let bestD = Infinity;
+    for (const p of samples) {
+      const d = Math.hypot(p.x - tip.x, p.y - tip.y);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return { x: best.x, y: best.y };
+  }
+  let sx = 0;
+  let sy = 0;
+  for (const p of inside) {
+    sx += p.x;
+    sy += p.y;
+  }
+  return { x: sx / inside.length, y: sy / inside.length };
 }
 
 function packHit(player, hb) {
   const region = contactRegion(player, hb);
   const face = contactFace(player, hb, region);
   const bodyPart = classifyBodyPart(player, hb);
-  const { x: cx } = playerCenter(player);
+  const contactPoint = estimateContactPoint(player, hb);
+  const { x: cx, y: cy } = playerCenter(player);
   const tip = hb.tip || hb.points[0];
+  const distToTip = tip
+    ? Math.hypot(contactPoint.x - tip.x, contactPoint.y - tip.y)
+    : 0;
+
+  // normal da superfície da ponta (do tip para o centro da base)
+  let surfaceNormal = { x: 0, y: hb.side === "bottom" ? -1 : 1 };
+  if (hb.points && hb.points.length >= 3 && tip) {
+    const basePts = hb.points.filter(
+      (p) => Math.hypot(p.x - tip.x, p.y - tip.y) > 2
+    );
+    if (basePts.length) {
+      const bx = basePts.reduce((s, p) => s + p.x, 0) / basePts.length;
+      const by = basePts.reduce((s, p) => s + p.y, 0) / basePts.length;
+      const dx = tip.x - bx;
+      const dy = tip.y - by;
+      const len = Math.hypot(dx, dy) || 1;
+      surfaceNormal = { x: dx / len, y: dy / len };
+    }
+  }
+
   return {
     ...hb,
     region,
     face,
     bodyPart,
     tip,
+    contactPoint,
+    distToTip,
+    surfaceNormal,
     offsetX: cx - (tip?.x ?? cx),
+    offsetY: cy - (tip?.y ?? cy),
     lateral: Math.abs(cx - (tip?.x ?? cx)) / Math.max(hb.size || 48, 1),
   };
 }

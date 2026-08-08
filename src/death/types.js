@@ -19,14 +19,20 @@ export const DeathType = {
  * @property {string} type - DeathType.*
  * @property {'top'|'bottom'|null} side
  * @property {{x:number,y:number}|null} tip
- * @property {'head'|'torso'|'legs'|null} bodyPart
+ * @property {string|null} bodyPart - membro fino: head|chest|hip|lFoot|rFoot|lKnee|rKnee|lHand|rHand|lShoulder|rShoulder|legs|torso
  * @property {'tip'|'base'|null} region
  * @property {number} offsetX
+ * @property {number} [offsetY]
  * @property {number} impact
  * @property {number} playerX
  * @property {number} playerY
  * @property {number} velocityY
+ * @property {number} [velocityX]
  * @property {number} angle - ângulo do corpo (radianos) no momento do impacto
+ * @property {number} [angularVelocity]
+ * @property {{x:number,y:number}|null} [contactPoint]
+ * @property {number} [distToTip]
+ * @property {{x:number,y:number}|null} [surfaceNormal]
  * @property {object} [severed]
  */
 
@@ -39,12 +45,18 @@ export function createDeathEvent(partial = {}) {
     bodyPart: null,
     region: null,
     offsetX: 0,
+    offsetY: 0,
     impact: 1,
     playerX: 300,
     playerY: 0,
     velocityY: 0,
+    velocityX: 0,
     angle: 0,
+    angularVelocity: 0,
     hSpeed: 0,
+    contactPoint: null,
+    distToTip: 0,
+    surfaceNormal: null,
     severed: null,
     ...partial,
   };

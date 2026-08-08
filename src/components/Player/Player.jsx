@@ -556,9 +556,10 @@ function Player({
     const rd = createRagdoll(playerX, drawYRef.current, {
       deathType,
       velocityY: velocityRef.current,
+      velocityX: deathSpike?.velocityX ?? 0,
       moveSpeed: moveSpeedRef.current,
       hSpeed: moveSpeedRef.current,
-      spin: livingRef.current?.omega ?? 0,
+      spin: livingRef.current?.omega ?? deathSpike?.angularVelocity ?? 0,
       floorY,
       ceilingY,
       severed: {
@@ -571,9 +572,14 @@ function Player({
       spikeTipY: tipY,
       spikeSide: deathSpike?.side ?? "bottom",
       offsetX: deathSpike?.offsetX ?? 0,
+      offsetY: deathSpike?.offsetY ?? 0,
       impact: deathSpike?.impact ?? 1,
       bodyPart: deathSpike?.bodyPart ?? "torso",
       region: deathSpike?.region ?? "tip",
+      contactPoint: deathSpike?.contactPoint ?? null,
+      distToTip: deathSpike?.distToTip ?? 0,
+      surfaceNormal: deathSpike?.surfaceNormal ?? null,
+      spikeIndex: deathSpike?.spikeIndex ?? null,
       obstacles: obstaclesRef.current ?? [],
       onBlood: ({ x, y, count = 8, power = 1 }) => {
         bloodRef?.current?.burst({

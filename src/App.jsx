@@ -504,17 +504,21 @@ function App() {
       // NÃO zera momentum — mapa desacelera junto com a speed residual
       setDisplaySpeed(gameSpeed.current);
 
-      // Classificação única em death/classify.js
+      // Classificação única em death/classify.js — passa contexto rico
+      // (membro fino, ponto de contato, velocidades) para a reação física.
       const event = classifyDeath(hitTop, hitBottom, {
         velocityY: speed.current,
+        velocityX: 0, // scroll é mundo; momentum relativo via hSpeed
         playerX: player.x,
         playerY: player.y,
         playerW: player.width,
         playerH: player.height,
         angle: playerAngleRef.current || 0,
+        angularVelocity: 0,
         hSpeed: gameSpeed.current,
       });
 
+      const primaryHit = hitBottom || hitTop;
       setDeathSpike({
         tipX: event.tip?.x,
         tipY: event.tip?.y,
@@ -522,9 +526,17 @@ function App() {
         region: event.region,
         bodyPart: event.bodyPart,
         offsetX: event.offsetX,
+        offsetY: event.offsetY,
         impact: event.impact,
-        face: hitTop?.face || hitBottom?.face || null,
-        lateral: hitTop?.lateral || hitBottom?.lateral || 0,
+        face: primaryHit?.face || null,
+        lateral: primaryHit?.lateral || 0,
+        contactPoint: event.contactPoint,
+        distToTip: event.distToTip,
+        surfaceNormal: event.surfaceNormal,
+        velocityY: event.velocityY,
+        velocityX: event.velocityX,
+        angularVelocity: event.angularVelocity,
+        spikeIndex: primaryHit?.index ?? null,
       });
       setDeathObstacles([...topBoxes, ...bottomBoxes]);
       deathTypeRef.current = event.type;
