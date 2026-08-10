@@ -25,7 +25,49 @@ Settings.maxRotationSquared = (0.85 * Math.PI) ** 2;
 const GRAVITY = 520;
 const VEL_ITERS = 10;
 const POS_ITERS = 4;
-const NO_SELF = { groupIndex: -1 };
+
+// Categorias de colisão: usadas pra, no momento do empalamento,
+// desligar a colisão SÓ do membro atingido contra os espetos — sem
+// isso o joint puxa o membro pra dentro do espeto enquanto a física
+// de colisão sólida empurra ele pra fora ao mesmo tempo, e o resultado
+// é um tremor/vibração no ponto de encaixe (nada natural).
+const CATEGORY_PART = 0x0001;
+const CATEGORY_SPIKE = 0x0002;
+const PART_FILTER = {
+  groupIndex: -1,
+  categoryBits: CATEGORY_PART,
+  maskBits: 0xffff,
+};
+
+function disableSpikeCollision(body) {
+  if (!body) return;
+  let fx = body.getFixtureList && body.getFixtureList();
+  while (fx) {
+    try {
+      fx.setFilterData({
+        groupIndex: -1,
+        categoryBits: CATEGORY_PART,
+        maskBits: 0xffff & ~CATEGORY_SPIKE,
+      });
+    } catch (_e) {
+      // ignore
+    }
+    fx = fx.getNext ? fx.getNext() : null;
+  }
+}
+
+function enableSpikeCollision(body) {
+  if (!body) return;
+  let fx = body.getFixtureList && body.getFixtureList();
+  while (fx) {
+    try {
+      fx.setFilterData({ ...PART_FILTER });
+    } catch (_e) {
+      // ignore
+    }
+    fx = fx.getNext ? fx.getNext() : null;
+  }
+}
 
 // Só esses tipos representam um empalamento de verdade (corpo preso na
 // ponta). FLOP/SPIN/BOUNCE são reações de "bateu e continuou" — não
@@ -83,7 +125,7 @@ function box(world, x, y, hx, hy, density, userData = null) {
     density,
     friction: 0.25,
     restitution: 0.55,
-    filter: NO_SELF,
+    filter: PART_FILTER,
   });
   if (userData) body.setUserData(userData);
   return body;
@@ -102,7 +144,7 @@ function circle(world, x, y, r, density, userData = null) {
     density,
     friction: 0.2,
     restitution: 0.5,
-    filter: NO_SELF,
+    filter: PART_FILTER,
   });
   if (userData) body.setUserData(userData);
   return body;
@@ -160,6 +202,11 @@ function addSpikeObstacles(world, obstacles, focusX = 320, focusY = 300) {
         shape: Polygon(hb.points.map((p) => Vec2(p.x, p.y))),
         friction: 0.55,
         restitution: 0.12,
+        filter: {
+          groupIndex: 0,
+          categoryBits: CATEGORY_SPIKE,
+          maskBits: 0xffff,
+        },
       });
       body.setUserData({
         kind: "spike",
@@ -358,6 +405,7 @@ function setupContacts(ragdoll) {
             const detached = severLimbOnImpale(ragdoll, part.name);
             if (detached) pinTarget = detached;
           }
+          disableSpikeCollision(pinTarget);
 
           const pinY =
             tip.y + (spike.side === "bottom" ? 10 : -8);
@@ -620,6 +668,7 @@ export function createRagdoll(x, y, opts = {}) {
     opts.spikeIndex ?? opts.event?.spikeIndex ?? opts.index ?? null;
 
   if (attachBody) {
+    disableSpikeCollision(attachBody);
     const ap = attachBody.getPosition();
     const distToTip = Math.hypot(ap.x - tipX, ap.y - tipY);
     const near = distToTip < NEAR_TIP;
@@ -642,28 +691,53 @@ export function createRagdoll(x, y, opts = {}) {
       ropeLen = Math.max(10, Math.min(ropeLen, 56));
     }
 
-    // Mola mais macia no teto / quando longe — evita chicote. Impacto
-    // mais forte = espeto crava mais firme (menos "boiando" na mola).
-    const far = !near;
+    // Impacto mais forte = espeto crava mais firme (mola do fallback
+    // "longe" fica mais rígida também).
     const ceiling = spikeSide === "top";
     const extremity = isExtremityPart(bodyPart);
-    const frequencyHz =
-      (far || ceiling ? 3.2 : 6.5) + (impact - 1) * 1.4;
-    const dampingRatio = far || ceiling ? 0.85 : 0.7;
 
-    pinJoint = world.createJoint(
-      DistanceJoint({
-        bodyA: pinBody,
-        bodyB: attachBody,
-        localAnchorA: Vec2(0, 0),
-        localAnchorB: Vec2(0, 0),
-        length: ropeLen,
-        frequencyHz,
-        dampingRatio,
-        collideConnected: false,
-      })
-    );
+    if (near) {
+      // Contato já real (o caso normal — a morte só é classificada
+      // depois de encostar): trava o membro EXATAMENTE no ponto de
+      // encaixe com um pino rígido (RevoluteJoint). O anchor é
+      // calculado no espaço local do corpo, então não há "snap" —
+      // o resto do esqueleto continua livre pra girar/balançar por
+      // gravidade e inércia em volta desse ponto, como um corpo
+      // pendurado de verdade, sem o "boiar" de mola.
+      const localAnchorB = attachBody.getLocalPoint(Vec2(pinX, pinY));
+      pinJoint = world.createJoint(
+        RevoluteJoint({
+          bodyA: pinBody,
+          bodyB: attachBody,
+          localAnchorA: Vec2(0, 0),
+          localAnchorB,
+          collideConnected: false,
+        })
+      );
+    } else {
+      // Longe (raro): aproxima aos poucos com mola, sem puxar o
+      // esqueleto inteiro de uma vez.
+      const frequencyHz = 3.2 + (impact - 1) * 1.4;
+      const dampingRatio = 0.85;
+      pinJoint = world.createJoint(
+        DistanceJoint({
+          bodyA: pinBody,
+          bodyB: attachBody,
+          localAnchorA: Vec2(0, 0),
+          localAnchorB: Vec2(0, 0),
+          length: ropeLen,
+          frequencyHz,
+          dampingRatio,
+          collideConnected: false,
+        })
+      );
+    }
     hangReleased = false;
+
+    // Assenta mais rápido (menos "gelatina" nos primeiros instantes
+    // do empalamento) sem matar o balanço natural depois.
+    attachBody.setAngularDamping(near ? 0.55 : 0.3);
+    attachBody.setLinearDamping(near ? 0.12 : 0.05);
 
     // Extremidade (mão/pé/joelho/ombro): o espeto atravessa carne fina
     // e prende de vez — praticamente não solta durante a animação.
@@ -893,6 +967,9 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
         ragdoll.world.destroyJoint(ragdoll.pinJoint);
       } catch (_) {}
       ragdoll.pinJoint = null;
+      // Volta a colidir com espetos normalmente — senão o membro
+      // atravessa qualquer espeto pelo resto da queda.
+      enableSpikeCollision(ragdoll.attachBody);
     }
   }
 
