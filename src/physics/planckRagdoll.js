@@ -27,6 +27,33 @@ const VEL_ITERS = 10;
 const POS_ITERS = 4;
 const NO_SELF = { groupIndex: -1 };
 
+// Só esses tipos representam um empalamento de verdade (corpo preso na
+// ponta). FLOP/SPIN/BOUNCE são reações de "bateu e continuou" — não
+// devem prender o corpo no espeto, senão toda morte vira impale.
+const IMPALE_TYPES = new Set([
+  DeathType.HANG,
+  DeathType.IMPALE,
+  DeathType.IMPALE_LEG,
+]);
+
+// Extremidades (mão/pé/joelho/ombro): carne fina, o espeto atravessa e
+// prende de vez — não soltam durante a animação de morte.
+// Núcleo (cabeça/peito/quadril): mais massa, pode rasgar e soltar do
+// espeto se o impacto for forte o suficiente.
+const EXTREMITY_PARTS = new Set([
+  "lHand",
+  "rHand",
+  "lFoot",
+  "rFoot",
+  "lKnee",
+  "rKnee",
+  "lShoulder",
+  "rShoulder",
+]);
+function isExtremityPart(part) {
+  return EXTREMITY_PARTS.has(part);
+}
+
 function rev(world, a, b, localA, localB, limits) {
   const def = {
     bodyA: a,
@@ -563,37 +590,26 @@ export function createRagdoll(x, y, opts = {}) {
     return chest;
   }
 
-  // Desloca TODO o esqueleto para que o membro fique na ponta
-  function seatWholeBodyOnTip(partBody, name, px, py) {
-    if (!partBody) return;
-    const ap = partBody.getPosition();
-    const dx = px - ap.x;
-    const dy = py - ap.y;
-    const all = [
-      head, chest, hip, lShoulder, rShoulder,
-      lHand, rHand, lKnee, rKnee, lFoot, rFoot,
-    ].filter(Boolean);
-    for (const b of all) {
-      const p = b.getPosition();
-      b.setTransform(Vec2(p.x + dx, p.y + dy), b.getAngle());
-      b.setLinearVelocity(Vec2(0, 0));
-      b.setAngularVelocity(0);
-    }
-  }
-
-  // PIN em qualquer morte com tip — só stall fica livre
+  // PIN natural: NÃO teleporta o corpo. Spawna onde morreu e o joint
+  // puxa o membro em direção à ponta (mola). Sem snap de longe → teto.
+  // Só empala de fato (HANG/IMPALE/IMPALE_LEG) — FLOP/SPIN/BOUNCE reagem
+  // ao toque e continuam livres, sem ficar grudados no espeto.
   const canPin =
     Number.isFinite(tipX) &&
     Number.isFinite(tipY) &&
-    deathType !== DeathType.STALL;
+    IMPALE_TYPES.has(deathType);
+
+  const hitBody = pickAttach(bodyPart);
 
   if (canPin) {
-    attachBody = pickAttach(bodyPart);
+    attachBody = hitBody;
     if (!attachBody) attachBody = chest;
   }
 
-  // Membro entra ~18px no corpo do spike (espinho atravessando)
-  const EMBED_DEPTH = 18;
+  // Embed só se o membro JÁ está perto da ponta; senão pin na ponta
+  // e a mola aproxima aos poucos.
+  const EMBED_DEPTH = 12;
+  const NEAR_TIP = 36; // px — abaixo disso considera "já no espeto"
 
   function embedPoint(tx, ty, side) {
     if (side === "top") return { x: tx, y: ty - EMBED_DEPTH };
@@ -604,55 +620,109 @@ export function createRagdoll(x, y, opts = {}) {
     opts.spikeIndex ?? opts.event?.spikeIndex ?? opts.index ?? null;
 
   if (attachBody) {
-    const emb = embedPoint(tipX, tipY, spikeSide);
+    const ap = attachBody.getPosition();
+    const distToTip = Math.hypot(ap.x - tipX, ap.y - tipY);
+    const near = distToTip < NEAR_TIP;
+
+    // Ponto do pin: se já está perto, enfia um pouco; se longe, fica na ponta
+    // (sem puxar o esqueleto inteiro até lá de uma vez)
+    const emb = near ? embedPoint(tipX, tipY, spikeSide) : { x: tipX, y: tipY };
     const pinX = emb.x;
     const pinY = emb.y;
 
-    // 1) Coloca o membro ENFIADO no spike (corpo inteiro desloca junto)
-    seatWholeBodyOnTip(attachBody, null, pinX, pinY);
-
-    // 2) Pin estático no ponto de perfuração
     pinBody = world.createBody({ type: "static", position: Vec2(pinX, pinY) });
 
-    // 3) Weld = preso de verdade (sem mola). O resto do esqueleto
-    //    continua com revolute joints → gira em torno do membro.
+    // Comprimento inicial ≈ distância atual (zero snap).
+    // Se perto, encurta um pouco para "cravar"; se longe, só ancora.
+    let ropeLen = Math.hypot(ap.x - pinX, ap.y - pinY);
+    if (near) {
+      ropeLen = Math.max(4, Math.min(ropeLen, 14));
+    } else {
+      // longe (ex.: corpo no meio e spike no teto): não estica à força
+      ropeLen = Math.max(10, Math.min(ropeLen, 56));
+    }
+
+    // Mola mais macia no teto / quando longe — evita chicote. Impacto
+    // mais forte = espeto crava mais firme (menos "boiando" na mola).
+    const far = !near;
+    const ceiling = spikeSide === "top";
+    const extremity = isExtremityPart(bodyPart);
+    const frequencyHz =
+      (far || ceiling ? 3.2 : 6.5) + (impact - 1) * 1.4;
+    const dampingRatio = far || ceiling ? 0.85 : 0.7;
+
     pinJoint = world.createJoint(
-      WeldJoint({
+      DistanceJoint({
         bodyA: pinBody,
         bodyB: attachBody,
         localAnchorA: Vec2(0, 0),
         localAnchorB: Vec2(0, 0),
-        referenceAngle: 0,
+        length: ropeLen,
+        frequencyHz,
+        dampingRatio,
         collideConnected: false,
       })
     );
     hangReleased = false;
 
-    // break alto + tempo mínimo longo = empalar visível
-    breakForce = 2500 + absVy * 30 + spd * 20;
+    // Extremidade (mão/pé/joelho/ombro): o espeto atravessa carne fina
+    // e prende de vez — praticamente não solta durante a animação.
+    // Núcleo (cabeça/peito/quadril): mais massa em cima do ponto de
+    // encaixe, então um impacto forte pode rasgar e soltar o corpo.
+    if (extremity) {
+      breakForce = 9999;
+    } else {
+      breakForce = near
+        ? (1800 + absVy * 25 + spd * 16) * impact
+        : (700 + absVy * 12 + spd * 10) * impact;
+      if (ceiling) breakForce *= 0.75;
+    }
+
+    // Golpe de cravamento: empurra o próprio membro atingido no sentido
+    // da ponta (usa a normal da superfície quando disponível) — a força
+    // escala com o impacto, então uma queda forte "afunda" mais que um
+    // toque de raspão.
+    const drive = surfaceNormal
+      ? { x: -surfaceNormal.x, y: -surfaceNormal.y }
+      : { x: 0, y: spikeSide === "bottom" ? -1 : 1 };
+    impulse(
+      attachBody,
+      drive.x * 14 * impact,
+      drive.y * 14 * impact
+    );
+  } else if (hitBody) {
+    // Reação de "bateu e não empalou" (FLOP/SPIN/BOUNCE): impulso
+    // localizado no membro que realmente tocou o espeto, na direção
+    // de afastamento da superfície, escalado pelo impacto — cada
+    // colisão empurra o corpo de um jeito diferente conforme onde e
+    // com que força bateu, em vez de uma reação genérica.
+    const away = surfaceNormal
+      ? { x: surfaceNormal.x, y: surfaceNormal.y }
+      : { x: side, y: spikeSide === "bottom" ? -1 : 1 };
+    const kick = 26 * impact;
+    impulse(hitBody, away.x * kick, away.y * kick - 18 * impact);
+    impulse(chest, away.x * kick * 0.4, -10 * impact);
+    impulse(hip, away.x * kick * 0.25, -6 * impact);
   }
 
-  // Inércia só no corpo LIVRE (não no membro pinado).
-  // Vx reduzido: o scroll do spike arrasta o corpo via pin follow,
-  // não precisamos de um empurrão enorme que estoura o joint.
+  // Herda velocidade do momento da morte — o joint + gravidade fazem o resto
   {
-    const carryVy = (velocityY || 0) * 18;
-    const carryVx = 8 + Math.abs(opts.moveSpeed || opts.hSpeed || 0) * 4;
-    const spin = (opts.spin || 0) * 0.5;
+    const carryVy = (velocityY || 0) * 22;
+    const carryVx = 6 + Math.abs(opts.moveSpeed || opts.hSpeed || 0) * 3;
+    const spin = (opts.spin || 0) * 0.55;
     const allBodies = [
       head, chest, hip, lShoulder, rShoulder,
       lHand, rHand, lKnee, rKnee, lFoot, rFoot,
     ].filter(Boolean);
 
     for (const b of allBodies) {
-      if (attachBody && b === attachBody) {
-        b.setLinearVelocity(Vec2(0, 0));
-        b.setAngularVelocity(0);
-        continue;
-      }
       const cur = b.getLinearVelocity();
-      b.setLinearVelocity(Vec2(cur.x + carryVx, cur.y + carryVy));
-      if (spin) b.setAngularVelocity(b.getAngularVelocity() + spin);
+      // membro pinado também leva um pouco da vel — reação mais natural
+      const scale = attachBody && b === attachBody ? 0.35 : 1;
+      b.setLinearVelocity(
+        Vec2(cur.x + carryVx * scale, cur.y + carryVy * scale)
+      );
+      if (spin) b.setAngularVelocity(b.getAngularVelocity() + spin * scale);
     }
   }
 
@@ -745,11 +815,11 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
     resyncSpikeObstacles(ragdoll);
   }
 
-  // PERFURAÇÃO: o spike anda → arrasta o corpo inteiro junto (delta X/Y).
-  // Traduz pin + todos os bodies pelo mesmo delta = parece espetado no ferro.
+  // Se o mapa ainda rolar, só o pinBody acompanha a ponta.
+  // O membro é puxado pelo DistanceJoint — sem teleporte do esqueleto.
   if (ragdoll.pinBody && ragdoll.pinJoint && !ragdoll.hangReleased) {
     const side = ragdoll.pinFollowSide || ragdoll.spikeSide || "bottom";
-    const depth = ragdoll.pinEmbedDepth ?? 18;
+    const depth = ragdoll.pinEmbedDepth ?? 12;
     const obstacles = ragdoll.obstacles || [];
     const wantIndex = ragdoll.pinSpikeIndex;
     let bestTip = null;
@@ -771,38 +841,23 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
     }
 
     if (bestTip && bestD < 200) {
-      const embY = side === "top" ? bestTip.y - depth : bestTip.y + depth;
-      const embX = bestTip.x;
+      // pin na ponta (sem embed forçado se o corpo ainda está longe)
+      let embY = bestTip.y;
+      let embX = bestTip.x;
+      if (ragdoll.attachBody) {
+        const ap = ragdoll.attachBody.getPosition();
+        const dTip = Math.hypot(ap.x - bestTip.x, ap.y - bestTip.y);
+        if (dTip < 36) {
+          embY = side === "top" ? bestTip.y - depth : bestTip.y + depth;
+        }
+      }
       try {
-        const prev = ragdoll.pinBody.getPosition();
-        const dx = embX - prev.x;
-        const dy = embY - prev.y;
-        // move o pin
         ragdoll.pinBody.setTransform(Vec2(embX, embY), 0);
-        // arrasta TODO o ragdoll pelo mesmo delta (fica colado no spike)
-        if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-          const bodies = ragdoll.bodies || {};
-          for (const key of Object.keys(bodies)) {
-            const b = bodies[key];
-            if (!b) continue;
-            const p = b.getPosition();
-            b.setTransform(Vec2(p.x + dx, p.y + dy), b.getAngle());
-          }
-        }
-        // garante membro colado no ponto de perfuração
-        if (ragdoll.attachBody) {
-          ragdoll.attachBody.setTransform(
-            Vec2(embX, embY),
-            ragdoll.attachBody.getAngle()
-          );
-          ragdoll.attachBody.setLinearVelocity(Vec2(0, 0));
-        }
         ragdoll.spikeTipX = bestTip.x;
         ragdoll.spikeTipY = bestTip.y;
         ragdoll.pinFollowTipX = bestTip.x;
       } catch (_) {}
     }
-    // NÃO solta só porque o tip sumiu um frame — espera o timer
   }
 
   const steps = dtSec > 0.02 ? 2 : 1;

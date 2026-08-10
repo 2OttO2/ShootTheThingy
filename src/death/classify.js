@@ -99,19 +99,15 @@ export function classifyDeath(hitTop, hitBottom, ctx = {}) {
     return DeathType.IMPALE;
   };
 
-  // Qualquer contato com ponta → impale/hang (pin físico).
-  // FLOP/BOUNCE só em base bem clara.
+  // Empala/pendura SÓ quando a ponta de verdade encostou no membro —
+  // é a ponta que fura e prende; a base larga do espeto apenas
+  // empurra/derruba (bounce/flop/spin), mesmo em perna ou cabeça.
   if (onTip || region === "tip" || face === "tip") {
     type = byBodyPart();
   } else if (face === "left" || face === "right") {
     type = DeathType.SPIN;
   } else if (region === "base") {
-    type =
-      coarse === "legs" || part === "head"
-        ? byBodyPart()
-        : hit.side === "top"
-          ? DeathType.BOUNCE
-          : DeathType.FLOP;
+    type = hit.side === "top" ? DeathType.BOUNCE : DeathType.FLOP;
   } else {
     type = byBodyPart();
   }
