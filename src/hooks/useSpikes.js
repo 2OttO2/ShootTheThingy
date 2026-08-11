@@ -20,7 +20,7 @@ export default function useSpikes() {
 
   const updateSpikes = (dt, gameSpeed) => {
     setSpikes((prev) => {
-      let next = {
+      const next = {
         top: {
           ...prev.top,
           x: prev.top.x - (SPIKE_SPEED + gameSpeed) * dt,
@@ -31,8 +31,18 @@ export default function useSpikes() {
         },
       };
 
+      // Cada leva (topo/chão) só reseta a SI MESMA quando sai da tela —
+      // resetar as duas juntas teleportava a leva ainda visível pra uma
+      // posição nova do nada (e se o personagem tivesse acabado de
+      // empalar nela, o espeto sumia de baixo dele no meio da animação
+      // de morte).
       if (next.top.x <= -64 * next.top.amount) {
-        next = createSpikes();
+        const fresh = createSpikes();
+        next.top = fresh.top;
+      }
+      if (next.bottom.x <= -64 * next.bottom.amount) {
+        const fresh = createSpikes();
+        next.bottom = fresh.bottom;
       }
 
       spikesRef.current = next;

@@ -1187,7 +1187,17 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
 
   // Bounce explícito no chão/teto — restitution sozinha não basta
   // (fricção + vários contatos matam a energia). Reflete vy com retenção.
-  {
+  // Só faz sentido pra corpo LIVRE (tombando/voando) — enquanto tem um
+  // pino ativo (empalado de verdade), a posição já é toda governada
+  // pelo joint + gravidade. Aplicar esse clamp/teleporte em cima de um
+  // pino RÍGIDO era exatamente a causa do "flutua" no teto: o ponto
+  // de encaixe de um espeto de teto fica perto o bastante do limite
+  // superior da tela pra, durante um balanço mais forte, entrar nessa
+  // zona e levar um teleporte — o que briga com o joint rígido e gera
+  // um tranco/instabilidade visual (no chão isso quase nunca acontece,
+  // porque o corpo pendura BEM longe do chão de verdade).
+  const pinActive = ragdoll.pinJoint && !ragdoll.hangReleased;
+  if (!pinActive) {
     const floorY = ragdoll.floorY;
     const ceilingY = 8;
     const BOUNCE_KEEP = 0.72;
