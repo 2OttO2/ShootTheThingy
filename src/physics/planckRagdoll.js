@@ -716,17 +716,9 @@ export function createRagdoll(x, y, opts = {}) {
   const absVy = Math.abs(velocityY || 0);
   const spd = Math.abs(opts.moveSpeed || opts.hSpeed || 0);
   const impactSpeed = Math.hypot(opts.velocityX || 0, velocityY || 0) || absVy;
-
-  // Fallback só se a classificação precisa falhou
-  if (!bodyPart || bodyPart === "torso" || bodyPart === "legs") {
-    if (spikeSide === "bottom") {
-      bodyPart = offsetX < 0 ? "lFoot" : "rFoot";
-    } else if (spikeSide === "top") {
-      bodyPart = "head";
-    } else {
-      bodyPart = "chest";
-    }
-  }
+  const contactPoint = opts.contactPoint || opts.event?.contactPoint || null;
+  // Ângulo do player vivo na morte (rad) — ragdoll nasce na mesma orientação
+  const deathAngle = opts.angle ?? opts.event?.angle ?? 0;
 
   function pickAttach(part) {
     const map = {
@@ -752,7 +744,92 @@ export function createRagdoll(x, y, opts = {}) {
       if (offsetX < 0) return lHand || lShoulder;
       return rHand || rShoulder;
     }
-    return chest;
+    return null;
+  }
+
+  // Gira o esqueleto inteiro pro ângulo da morte (pé no teto = pé em cima)
+  {
+    if (Math.abs(deathAngle) > 0.12) {
+      const all = [
+        head, chest, hip, lShoulder, rShoulder,
+        lHand, rHand, lKnee, rKnee, lFoot, rFoot,
+      ].filter(Boolean);
+      let cx = 0;
+      let cy = 0;
+      for (const b of all) {
+        const p = b.getPosition();
+        cx += p.x;
+        cy += p.y;
+      }
+      cx /= all.length;
+      cy /= all.length;
+      const c = Math.cos(deathAngle);
+      const s = Math.sin(deathAngle);
+      for (const b of all) {
+        const p = b.getPosition();
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        const nx = cx + dx * c - dy * s;
+        const ny = cy + dx * s + dy * c;
+        b.setTransform(Vec2(nx, ny), deathAngle + b.getAngle());
+      }
+    }
+  }
+
+  // Resolve membro: NUNCA força cabeça no teto.
+  // 1) bodyPart fino da colisão  2) parte planck mais perto da ponta/contato
+  {
+    const fine = pickAttach(bodyPart);
+    if (!fine) {
+      // só aqui usa fallback por lado — e ainda assim escolhe o membro
+      // mais perto da ponta, não "sempre cabeça"
+      const candidates = [
+        head, chest, hip, lShoulder, rShoulder,
+        lHand, rHand, lKnee, rKnee, lFoot, rFoot,
+      ].filter(Boolean);
+      const ref = contactPoint || { x: tipX, y: tipY };
+      let best = null;
+      let bestD = Infinity;
+      for (const b of candidates) {
+        const p = b.getPosition();
+        const d = Math.hypot(p.x - ref.x, p.y - ref.y);
+        if (d < bestD) {
+          bestD = d;
+          best = b;
+        }
+      }
+      if (best) {
+        bodyPart = best.getUserData()?.name || bodyPart;
+      } else if (spikeSide === "bottom") {
+        bodyPart = offsetX < 0 ? "lFoot" : "rFoot";
+      } else {
+        bodyPart = "chest";
+      }
+    } else {
+      // Confirma: se outro membro está bem mais perto da ponta, usa ele
+      // (evita head pinado quando o pé que tocou está no tip)
+      const ref = contactPoint || { x: tipX, y: tipY };
+      const ap = fine.getPosition();
+      const dFine = Math.hypot(ap.x - ref.x, ap.y - ref.y);
+      const candidates = [
+        head, chest, hip, lShoulder, rShoulder,
+        lHand, rHand, lKnee, rKnee, lFoot, rFoot,
+      ].filter(Boolean);
+      let best = fine;
+      let bestD = dFine;
+      let bestName = bodyPart;
+      for (const b of candidates) {
+        const p = b.getPosition();
+        const d = Math.hypot(p.x - ref.x, p.y - ref.y);
+        // só troca se claramente mais perto (≥12px de vantagem)
+        if (d + 12 < bestD) {
+          bestD = d;
+          best = b;
+          bestName = b.getUserData()?.name || bestName;
+        }
+      }
+      bodyPart = bestName;
+    }
   }
 
   // PIN só quando o membro JÁ está perto da ponta.
@@ -776,18 +853,57 @@ export function createRagdoll(x, y, opts = {}) {
   const pinSpikeIndex =
     opts.spikeIndex ?? opts.event?.spikeIndex ?? opts.index ?? null;
 
-  // Mede distância do membro candidato à ponta ANTES de decidir pin
-  let candidateBody = canPinType ? hitBody || chest : null;
+  // Membro candidato = o que a colisão disse (nunca chest "por falta de")
+  let candidateBody = canPinType ? hitBody : null;
+  if (canPinType && !candidateBody) {
+    const ref = contactPoint || { x: tipX, y: tipY };
+    const candidates = [
+      head, chest, hip, lShoulder, rShoulder,
+      lHand, rHand, lKnee, rKnee, lFoot, rFoot,
+    ].filter(Boolean);
+    let bestD = Infinity;
+    for (const b of candidates) {
+      const p = b.getPosition();
+      const d = Math.hypot(p.x - ref.x, p.y - ref.y);
+      if (d < bestD) {
+        bestD = d;
+        candidateBody = b;
+        bodyPart = b.getUserData()?.name || bodyPart;
+      }
+    }
+  }
   let distToTip = 999;
   if (candidateBody) {
     const ap0 = candidateBody.getPosition();
     distToTip = Math.hypot(ap0.x - tipX, ap0.y - tipY);
   }
-  const near = distToTip < nearThreshold;
 
-  // Só prende se tipo de morte é impale E o membro está perto da ponta
-  if (canPinType && near && candidateBody) {
-    attachBody = candidateBody;
+  // Só prende o membro que tocou — nunca a cabeça "por padrão"
+  if (canPinType && candidateBody) {
+    // Ajuste leve: se o membro certo está um pouco longe da ponta
+    // (orientação/spawn), desloca o esqueleto INTEIRO pra ele chegar
+    // no tip — sem trocar de membro. Cap baixo = sem teleporte grande.
+    const ap1 = candidateBody.getPosition();
+    let dx = tipX - ap1.x;
+    let dy = tipY - ap1.y;
+    let gap = Math.hypot(dx, dy);
+    const MAX_ALIGN = isCeiling ? 48 : 40;
+    if (gap > 4 && gap < MAX_ALIGN) {
+      const all = [
+        head, chest, hip, lShoulder, rShoulder,
+        lHand, rHand, lKnee, rKnee, lFoot, rFoot,
+      ].filter(Boolean);
+      for (const b of all) {
+        const p = b.getPosition();
+        b.setTransform(Vec2(p.x + dx, p.y + dy), b.getAngle());
+      }
+      distToTip = 0;
+    } else {
+      distToTip = gap;
+    }
+    if (distToTip < nearThreshold || gap < MAX_ALIGN) {
+      attachBody = candidateBody;
+    }
   }
 
   if (attachBody) {

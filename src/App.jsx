@@ -553,6 +553,7 @@ function App() {
         velocityX: event.velocityX,
         angularVelocity: event.angularVelocity,
         spikeIndex: primaryHit?.index ?? null,
+        angle: playerAngleRef.current || event.angle || 0,
       });
       setDeathObstacles([...topBoxes, ...bottomBoxes]);
       deathTypeRef.current = event.type;

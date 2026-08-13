@@ -580,6 +580,8 @@ function Player({
       distToTip: deathSpike?.distToTip ?? 0,
       surfaceNormal: deathSpike?.surfaceNormal ?? null,
       spikeIndex: deathSpike?.spikeIndex ?? null,
+      // orientação do vivo no momento da morte (pé no teto ≠ head no teto)
+      angle: deathSpike?.angle ?? livingRef.current?.angle ?? 0,
       obstacles: obstaclesRef.current ?? [],
       onBlood: ({ x, y, count = 8, power = 1 }) => {
         bloodRef?.current?.burst({
