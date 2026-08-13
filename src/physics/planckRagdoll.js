@@ -512,50 +512,41 @@ function setupContacts(ragdoll) {
         part.name === "lShoulder" ||
         part.name === "rShoulder";
 
-      if (speed > 70 && (isTorso || isLeg || isArm)) {
+      // engate secundário: peito/cabeça/membro — SEM amputar no toque.
+      // membro rasga depois pela tensão (pendingTear), como no primário.
+      if (speed > 45 && (isTorso || isLeg || isArm)) {
         try {
           if (ragdoll.pinJoint) {
             world.destroyJoint(ragdoll.pinJoint);
             ragdoll.pinJoint = null;
           }
-          ragdoll.hangReleased = true;
-          // libera colisão do pin antigo pra não herdar mask errada
           enableSpikeCollisionMany(
             Object.values(ragdoll.bodies || {}).filter(Boolean)
           );
 
-          let pinTarget = partBody;
-
-          // membro → separa do corpo; tronco/head NÃO amputam
-          if (isLeg || isArm) {
-            const detached = severLimbOnImpale(ragdoll, part.name);
-            if (detached) pinTarget = detached;
-          }
+          const pinTarget = partBody;
           disableSpikeCollision(pinTarget);
-          if (isTorso) {
-            // tronco/head continuam ligados ao resto do esqueleto —
-            // desliga a colisão do corpo inteiro (mesmo motivo do
-            // impale primário: evita esbarrar em espetos vizinhos da
-            // mesma fileira enquanto balança pendurado).
-            disableSpikeCollisionMany(
-              Object.values(ragdoll.bodies).filter(Boolean)
-            );
-          }
 
-          // Ancora rígida na ponta — membro amputado fica VISÍVEL no espeto
-          const embed =
-            spike.side === "bottom" ? 10 : -10;
+          const embed = spike.side === "bottom" ? 10 : -10;
           const pinX = tip.x;
           const pinY = tip.y + embed;
-          // coloca o membro na ponta (só ele, já separado do tronco)
+
+          // NÃO teleporta o tronco inteiro — só ancora onde o membro já está
+          // (se estiver perto o bastante, alinha só o pinTarget)
           const ap = pinTarget.getPosition();
-          pinTarget.setTransform(Vec2(pinX, pinY), pinTarget.getAngle());
-          pinTarget.setLinearVelocity(Vec2(0, 0));
-          pinTarget.setAngularVelocity(0);
+          const gap = Math.hypot(ap.x - pinX, ap.y - pinY);
+          if (gap < 50) {
+            pinTarget.setTransform(Vec2(pinX, pinY), pinTarget.getAngle());
+            pinTarget.setLinearVelocity(Vec2(0, 0));
+            pinTarget.setAngularVelocity(0);
+          }
 
           const pin = world.createBody({
             type: "static",
-            position: Vec2(pinX, pinY),
+            position: Vec2(
+              gap < 50 ? pinX : ap.x,
+              gap < 50 ? pinY : ap.y
+            ),
           });
           ragdoll.pinJoint = world.createJoint(
             RevoluteJoint({
@@ -568,9 +559,8 @@ function setupContacts(ragdoll) {
           );
           ragdoll.pinBody = pin;
           ragdoll.attachBody = pinTarget;
-          // membro amputado NÃO solta; tronco pode soltar com mais força
-          ragdoll.breakForce = isTorso ? 400 + speed : 9999;
-          ragdoll.hangReleased = false; // pin ativo — acompanha o tip
+          ragdoll.breakForce = isTorso ? 500 + speed : 9999;
+          ragdoll.hangReleased = false;
           ragdoll.hangTimer = 0;
           ragdoll.secondaryImpale = true;
           ragdoll.deathType = isLeg || isArm
@@ -584,16 +574,40 @@ function setupContacts(ragdoll) {
           ragdoll.spikeTipY = tip.y;
           ragdoll.pinKind = "rigid";
           ragdoll.pinEmbedDepth = Math.abs(embed);
-          // membro amputado preso no spike — flag pro render sempre desenhar
+          ragdoll.spikeStuck = null; // só após rasgar
+
+          // membro: prepara rasgo por tensão (corpo puxa e arranca)
           if (isLeg || isArm) {
-            ragdoll.spikeStuck = {
-              part: part.name,
-              legLeft: part.name === "lFoot" || part.name === "lKnee",
-              legRight: part.name === "rFoot" || part.name === "rKnee",
-              armLeft: part.name === "lHand" || part.name === "lShoulder",
-              armRight: part.name === "rHand" || part.name === "rShoulder",
-            };
+            const b = ragdoll.bodies || {};
+            let parentBody = null;
+            let childBody = pinTarget;
+            if (part.name === "lFoot" || part.name === "lKnee") {
+              parentBody = b.hip;
+              childBody = b.lKnee || b.lFoot || pinTarget;
+            } else if (part.name === "rFoot" || part.name === "rKnee") {
+              parentBody = b.hip;
+              childBody = b.rKnee || b.rFoot || pinTarget;
+            } else if (part.name === "lHand" || part.name === "lShoulder") {
+              parentBody = b.chest;
+              childBody = b.lShoulder || b.lHand || pinTarget;
+            } else if (part.name === "rHand" || part.name === "rShoulder") {
+              parentBody = b.chest;
+              childBody = b.rShoulder || b.rHand || pinTarget;
+            }
+            if (parentBody && childBody) {
+              ragdoll.pendingTear = {
+                partName: part.name,
+                parentBody,
+                childBody,
+                tearForce: Math.max(160, 320 - speed * 0.5),
+                minTime: 0.2,
+                timer: 0,
+              };
+            }
+          } else {
+            ragdoll.pendingTear = null;
           }
+
           if (typeof ragdoll.onBlood === "function") {
             ragdoll.onBlood({
               x: tip.x,
@@ -602,7 +616,9 @@ function setupContacts(ragdoll) {
               power: 1.1,
             });
           }
-        } catch (_) {}
+        } catch (err) {
+          console.warn("secondary impale failed", err);
+        }
       }
     }
   });
@@ -792,7 +808,10 @@ export function createRagdoll(x, y, opts = {}) {
       if (offsetX < 0) return lHand || lShoulder;
       return rHand || rShoulder;
     }
-    return null;
+    // peito / torso / genérico → chest (impale no tronco)
+    if (part === "torso" || part === "chest" || part === "body") return chest;
+    if (part === "hip") return hip;
+    return chest;
   }
 
   // Gira o esqueleto inteiro pro ângulo da morte (pé no teto = pé em cima)
@@ -1381,7 +1400,6 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
     if (canTear && mag > (pt.tearForce || 300)) {
       const detached = severLimbOnImpale(ragdoll, pt.partName);
       if (detached && ragdoll.pinBody) {
-        // re-pin a peça amputada (pode ser o mesmo body)
         try {
           if (ragdoll.pinJoint) ragdoll.world.destroyJoint(ragdoll.pinJoint);
         } catch (_e) {}
@@ -1393,8 +1411,34 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
           (ragdoll.pinFollowSide || ragdoll.spikeSide) === "top" ? -10 : 10;
         const pinX = tip.x;
         const pinY = tip.y + embed;
-        detached.setTransform(Vec2(pinX, pinY), detached.getAngle());
-        detached.setLinearVelocity(Vec2(0, 0));
+
+        // coloca a cadeia do membro no tip (knee+foot / shoulder+hand)
+        const b = ragdoll.bodies || {};
+        const chain = [];
+        if (pt.partName === "lFoot" || pt.partName === "lKnee") {
+          if (b.lKnee) chain.push(b.lKnee);
+          if (b.lFoot) chain.push(b.lFoot);
+        } else if (pt.partName === "rFoot" || pt.partName === "rKnee") {
+          if (b.rKnee) chain.push(b.rKnee);
+          if (b.rFoot) chain.push(b.rFoot);
+        } else if (pt.partName === "lHand" || pt.partName === "lShoulder") {
+          if (b.lShoulder) chain.push(b.lShoulder);
+          if (b.lHand) chain.push(b.lHand);
+        } else if (pt.partName === "rHand" || pt.partName === "rShoulder") {
+          if (b.rShoulder) chain.push(b.rShoulder);
+          if (b.rHand) chain.push(b.rHand);
+        }
+        if (!chain.length) chain.push(detached);
+
+        // pin body + primeiro da cadeia no tip; resto empilhado
+        let yOff = 0;
+        for (const c of chain) {
+          c.setTransform(Vec2(pinX, pinY + yOff), c.getAngle());
+          c.setLinearVelocity(Vec2(0, 0));
+          c.setAngularVelocity(0);
+          yOff += embed > 0 ? 12 : -12;
+        }
+
         ragdoll.pinBody.setTransform(Vec2(pinX, pinY), 0);
         ragdoll.pinJoint = ragdoll.world.createJoint(
           RevoluteJoint({
