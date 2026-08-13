@@ -316,13 +316,9 @@ function App() {
       updateSpikes(dt, gameSpeed.current);
     }
 
-    // hitboxes de debug (e as usadas na colisão do corpo morto com os
-    // spikes) sempre acompanham a posição atual deles, vivo ou morto —
-    // senão desalinham quando o mapa continua andando depois da morte.
-    // Filtro só por visibilidade em tela (não pela posição do player —
-    // essa trava depois da morte, já que playerY.current para de ser
-    // atualizado, o que fazia a colisão "desligar" assim que o corpo se
-    // afastava do ponto onde morreu).
+    // hitboxes SEMPRE a partir de spikesRef (fonte da verdade).
+    // O sprite usa o state `spikes` — o setState do updateSpikes já
+    // sincroniza; o −9px antigo no hitbox era o desalinhamento visual.
     const currentSpikeHitboxes = [
       ...createSpikeHitboxes(spikesRef.current.top, "top"),
       ...createSpikeHitboxes(spikesRef.current.bottom, "bottom"),

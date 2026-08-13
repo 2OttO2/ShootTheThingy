@@ -1,8 +1,8 @@
 import styles from "./Spikes.module.css";
 import spikeImg from "../../assets/spike.png";
+import { SPIKE_SIZE } from "../../constants/game.js";
 
-function Spikes({ x, side, amount}) {
-
+function Spikes({ x, side, amount }) {
   return (
     <>
       {Array.from({ length: amount }).map((_, index) => (
@@ -11,7 +11,8 @@ function Spikes({ x, side, amount}) {
           src={spikeImg}
           className={`${styles.spike} ${styles[side]}`}
           style={{
-            left: `${x + index * 64}px`
+            // deve ser idêntico a createSpikeHitboxes: x + index * SPIKE_SIZE
+            left: `${x + index * SPIKE_SIZE}px`,
           }}
           alt=""
         />
