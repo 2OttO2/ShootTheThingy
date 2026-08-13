@@ -217,12 +217,39 @@ function contactRegion(player, hb) {
   }
   const distBase = Math.hypot(cx - bx, cy - by);
 
+  // Usa também o ponto de contato real (média dos samples dentro do
+  // triângulo) — o centro do player fica longe da ponta no teto e
+  // classificava quase tudo como "tip", gerando impale forçado.
+  const samples = samplePlayerPoints(player);
+  const inside = samples.filter((p) => pointInTriangle(p, hb.points));
+  let contactDistTip = distTip;
+  if (inside.length) {
+    let sx = 0;
+    let sy = 0;
+    for (const p of inside) {
+      sx += p.x;
+      sy += p.y;
+    }
+    contactDistTip = Math.hypot(sx / inside.length - tip.x, sy / inside.length - tip.y);
+  }
+
   if (hb.side === "bottom") {
     const tipZone = tip.y + (by - tip.y) * 0.52;
-    if (cy <= tipZone || distTip < distBase * 0.9 || distTip < 46) return "tip";
+    if (cy <= tipZone || contactDistTip < distBase * 0.85 || contactDistTip < 40)
+      return "tip";
     return "base";
   }
-  if (distTip < 56 || distTip < distBase * 0.9) return "tip";
+
+  // Teto: ponta aponta pra BAIXO. Zona de ponta = metade inferior do triângulo.
+  // Só "tip" se o contato real está perto da ponta — não o centro do corpo.
+  const tipZone = tip.y - Math.abs(tip.y - by) * 0.48;
+  if (
+    contactDistTip < 28 ||
+    (cy >= tipZone && contactDistTip < distBase * 0.75) ||
+    contactDistTip < distBase * 0.55
+  ) {
+    return "tip";
+  }
   return "base";
 }
 

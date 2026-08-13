@@ -755,24 +755,19 @@ export function createRagdoll(x, y, opts = {}) {
     return chest;
   }
 
-  // PIN natural: NÃO teleporta o corpo. Spawna onde morreu e o joint
-  // puxa o membro em direção à ponta (mola). Sem snap de longe → teto.
-  // Só empala de fato (HANG/IMPALE/IMPALE_LEG) — FLOP/SPIN/BOUNCE reagem
-  // ao toque e continuam livres, sem ficar grudados no espeto.
-  const canPin =
+  // PIN só quando o membro JÁ está perto da ponta.
+  // Longe = reação livre (impulso) — sem mola puxando o corpo até o
+  // teto (isso parecia teleporte em colisões superficiais).
+  const canPinType =
     Number.isFinite(tipX) &&
     Number.isFinite(tipY) &&
     IMPALE_TYPES.has(deathType);
 
   const hitBody = pickAttach(bodyPart);
+  const isCeiling = spikeSide === "top";
+  // Teto exige contato mais próximo (cabeça/torso na ponta de verdade)
+  const nearThreshold = isCeiling ? 28 : NEAR_TIP;
 
-  if (canPin) {
-    attachBody = hitBody;
-    if (!attachBody) attachBody = chest;
-  }
-
-  // Embed só se o membro JÁ está perto da ponta; senão pin na ponta
-  // e a mola aproxima aos poucos.
   function embedPoint(tx, ty, side) {
     if (side === "top") return { x: tx, y: ty - EMBED_DEPTH };
     return { x: tx, y: ty + EMBED_DEPTH };
@@ -781,16 +776,23 @@ export function createRagdoll(x, y, opts = {}) {
   const pinSpikeIndex =
     opts.spikeIndex ?? opts.event?.spikeIndex ?? opts.index ?? null;
 
+  // Mede distância do membro candidato à ponta ANTES de decidir pin
+  let candidateBody = canPinType ? hitBody || chest : null;
+  let distToTip = 999;
+  if (candidateBody) {
+    const ap0 = candidateBody.getPosition();
+    distToTip = Math.hypot(ap0.x - tipX, ap0.y - tipY);
+  }
+  const near = distToTip < nearThreshold;
+
+  // Só prende se tipo de morte é impale E o membro está perto da ponta
+  if (canPinType && near && candidateBody) {
+    attachBody = candidateBody;
+  }
+
   if (attachBody) {
-    // Desliga colisão com espeto pro corpo INTEIRO, não só a parte
-    // presa — enquanto pendurado, o resto do esqueleto balança e pode
-    // encostar em espetos VIZINHOS da mesma fileira (isso é bem mais
-    // provável no teto: o corpo pendura balançando bem no meio da
-    // faixa onde vários espetos de topo ficam lado a lado; no chão o
-    // corpo fica ACIMA da fileira, longe dela). Cada colisão nova
-    // contra um espeto vizinho recém-recriado pelo resync gera uma
-    // correção de posição forte — visualmente indistinguível de
-    // teleporte.
+    // Desliga colisão com espetos no corpo inteiro (vizinhos no teto
+    // geravam correções que pareciam teleporte).
     disableSpikeCollisionMany([
       head,
       chest,
@@ -804,116 +806,54 @@ export function createRagdoll(x, y, opts = {}) {
       lFoot,
       rFoot,
     ]);
-    const ap = attachBody.getPosition();
-    const distToTip = Math.hypot(ap.x - tipX, ap.y - tipY);
-    const near = distToTip < NEAR_TIP;
 
-    // Ponto do pin: se já está perto, enfia um pouco; se longe, fica na ponta
-    // (sem puxar o esqueleto inteiro até lá de uma vez)
-    const emb = near ? embedPoint(tipX, tipY, spikeSide) : { x: tipX, y: tipY };
+    const emb = embedPoint(tipX, tipY, spikeSide);
     const pinX = emb.x;
     const pinY = emb.y;
 
     pinBody = world.createBody({ type: "static", position: Vec2(pinX, pinY) });
 
-    // Comprimento inicial ≈ distância atual (zero snap).
-    // Se perto, encurta um pouco para "cravar"; se longe, só ancora.
-    let ropeLen = Math.hypot(ap.x - pinX, ap.y - pinY);
-    if (near) {
-      ropeLen = Math.max(4, Math.min(ropeLen, 14));
-    } else {
-      // longe (ex.: corpo no meio e spike no teto): não estica à força
-      ropeLen = Math.max(10, Math.min(ropeLen, 56));
-    }
-
-    // Impacto mais forte = espeto crava mais firme (mola do fallback
-    // "longe" fica mais rígida também).
-    const ceiling = spikeSide === "top";
     const extremity = isExtremityPart(bodyPart);
 
-    if (near) {
-      // Contato já real (o caso normal — a morte só é classificada
-      // depois de encostar): trava o membro com um pino rígido
-      // (RevoluteJoint) o mais perto possível da borda ideal da caixa
-      // — a de CIMA pra espeto de teto (corpo pendura por baixo), a
-      // de BAIXO pra espeto de chão (corpo fica por cima). NUNCA
-      // teleporta o corpo pra forçar esse alinhamento — isso deixaria
-      // todos os OUTROS joints dele (cotovelo, ombro, joelho...) com
-      // um erro de posição enorme de repente, e a correção da física
-      // se propagaria pela cadeia do esqueleto inteiro, fazendo a
-      // ponta mais solta da árvore (a cabeça) "explodir"/teleportar
-      // sozinha pra qualquer lugar. Em vez disso, ancora no ponto
-      // onde o corpo JÁ está (zero erro inicial), só usando a borda
-      // ideal quando ela já está perto o bastante de onde o corpo
-      // realmente está.
-      const halfY = PART_HALF_Y[bodyPart] ?? 10;
-      const embedIn = Math.min(EMBED_DEPTH, halfY - 2);
-      const edgeSign = ceiling ? -1 : 1; // teto: borda de cima; chão: borda de baixo
-      const idealLocalAnchor = Vec2(0, edgeSign * (halfY - embedIn));
-      const currentLocal = attachBody.getLocalPoint(Vec2(pinX, pinY));
-      const idealErr = Math.abs(currentLocal.y - idealLocalAnchor.y);
-      const localAnchorB =
-        idealErr < 10
-          ? idealLocalAnchor
-          : Vec2(currentLocal.x * 0.4, currentLocal.y);
+    // Contato real: RevoluteJoint no ponto onde o corpo JÁ está
+    // (zero snap). Ancora local = projeção atual, não borda forçada.
+    const halfY = PART_HALF_Y[bodyPart] ?? 10;
+    const embedIn = Math.min(EMBED_DEPTH, halfY - 2);
+    const edgeSign = isCeiling ? -1 : 1;
+    const idealLocalAnchor = Vec2(0, edgeSign * (halfY - embedIn));
+    const currentLocal = attachBody.getLocalPoint(Vec2(pinX, pinY));
+    const idealErr = Math.abs(currentLocal.y - idealLocalAnchor.y);
+    // No teto: tolera menos a âncora ideal (evita puxar a cabeça)
+    const idealTol = isCeiling ? 6 : 10;
+    const localAnchorB =
+      idealErr < idealTol
+        ? idealLocalAnchor
+        : Vec2(currentLocal.x * 0.35, currentLocal.y);
 
-      pinJoint = world.createJoint(
-        RevoluteJoint({
-          bodyA: pinBody,
-          bodyB: attachBody,
-          localAnchorA: Vec2(0, 0),
-          localAnchorB,
-          collideConnected: false,
-        })
-      );
-      pinIsRigid = true;
-    } else {
-      // Longe (raro): aproxima aos poucos com mola, sem puxar o
-      // esqueleto inteiro de uma vez.
-      const frequencyHz = 3.2 + (impact - 1) * 1.4;
-      const dampingRatio = 0.85;
-      pinJoint = world.createJoint(
-        DistanceJoint({
-          bodyA: pinBody,
-          bodyB: attachBody,
-          localAnchorA: Vec2(0, 0),
-          localAnchorB: Vec2(0, 0),
-          length: ropeLen,
-          frequencyHz,
-          dampingRatio,
-          collideConnected: false,
-        })
-      );
-    }
+    pinJoint = world.createJoint(
+      RevoluteJoint({
+        bodyA: pinBody,
+        bodyB: attachBody,
+        localAnchorA: Vec2(0, 0),
+        localAnchorB,
+        collideConnected: false,
+      })
+    );
+    pinIsRigid = true;
     hangReleased = false;
 
-    // Assenta mais rápido (menos "gelatina" nos primeiros instantes
-    // do empalamento) sem matar o balanço natural depois.
-    attachBody.setAngularDamping(near ? 0.55 : 0.3);
-    attachBody.setLinearDamping(near ? 0.12 : 0.05);
+    attachBody.setAngularDamping(isCeiling ? 0.45 : 0.55);
+    attachBody.setLinearDamping(isCeiling ? 0.1 : 0.12);
 
-    // Extremidade (mão/pé/joelho/ombro): o espeto atravessa carne fina
-    // e prende de vez — praticamente não solta durante a animação.
-    // Núcleo (cabeça/peito/quadril): mais massa em cima do ponto de
-    // encaixe, então um impacto forte pode rasgar e soltar o corpo.
     if (extremity) {
       breakForce = 9999;
     } else {
-      breakForce = near
-        ? (1800 + absVy * 25 + spd * 16) * impact
-        : (700 + absVy * 12 + spd * 10) * impact;
-      // Teto: gravidade puxa o corpo pro lado OPOSTO ao encaixe o
-      // tempo todo (tensão constante no pino) — solta um pouco mais
-      // fácil que no chão, mas não tão cedo quanto antes.
-      if (ceiling) breakForce *= 0.85;
+      breakForce = (1600 + absVy * 20 + spd * 14) * impact;
+      if (isCeiling) breakForce *= 0.8;
     }
 
-    // Golpe de cravamento: empurra o próprio membro atingido no sentido
-    // da ponta (usa a normal da superfície quando disponível) — a força
-    // escala com o impacto, então uma queda forte "afunda" mais que um
-    // toque de raspão. Ângulo e força têm um jitter aleatório — o
-    // mesmo tipo de acerto nunca crava exatamente igual duas vezes.
-    const driveJitter = (Math.random() - 0.5) * 0.5; // ~±14°
+    // Cravamento suave: impulso menor no teto (evita chicote)
+    const driveJitter = (Math.random() - 0.5) * 0.35;
     const baseDrive = surfaceNormal
       ? { x: -surfaceNormal.x, y: -surfaceNormal.y }
       : { x: 0, y: spikeSide === "bottom" ? -1 : 1 };
@@ -923,35 +863,29 @@ export function createRagdoll(x, y, opts = {}) {
       x: baseDrive.x * dcos - baseDrive.y * dsin,
       y: baseDrive.x * dsin + baseDrive.y * dcos,
     };
-    const driveMag = 14 * Math.min(impact, 1.4) * (0.8 + Math.random() * 0.5);
+    const driveScale = isCeiling ? 0.55 : 1;
+    const driveMag =
+      10 * Math.min(impact, 1.3) * (0.75 + Math.random() * 0.4) * driveScale;
     impulse(attachBody, drive.x * driveMag, drive.y * driveMag);
     {
       const av = attachBody.getLinearVelocity();
       const aspeed = Math.hypot(av.x, av.y);
-      const MAX_SPEED_ATTACH = 340;
+      const MAX_SPEED_ATTACH = isCeiling ? 220 : 340;
       if (aspeed > MAX_SPEED_ATTACH) {
         const k = MAX_SPEED_ATTACH / aspeed;
         attachBody.setLinearVelocity(Vec2(av.x * k, av.y * k));
       }
     }
 
-    // Convulsão imprevisível: um espasmo de torque logo após cravar —
-    // às vezes quase nada (corpo já morre mole), às vezes um chacoalhão
-    // forte antes de assentar. Cada morte reage diferente, mesmo pro
-    // mesmo membro/spike. Tetada — em impactos muito fortes (comuns
-    // em espeto de teto, já que geralmente é um pulo com bastante
-    // velocidade) um giro grande demais some/reaparece em posições
-    // diferentes a cada passo de física (o "maxTranslation" do motor
-    // limita o quanto um corpo anda por passo), parecendo teleporte.
     const convulsion =
       (Math.random() < 0.5 ? -1 : 1) *
-      (0.4 + Math.random() * 1.6) *
-      Math.min(impact, 1.4) *
+      (0.25 + Math.random() * (isCeiling ? 0.9 : 1.5)) *
+      Math.min(impact, 1.3) *
       attachBody.getMass();
     try {
       attachBody.applyAngularImpulse(convulsion);
       const w = attachBody.getAngularVelocity();
-      const MAX_W = 22; // rad/s — acima disso já parece quebrado, não violento
+      const MAX_W = isCeiling ? 14 : 22;
       if (Math.abs(w) > MAX_W) {
         attachBody.setAngularVelocity(Math.sign(w) * MAX_W);
       }
@@ -959,21 +893,19 @@ export function createRagdoll(x, y, opts = {}) {
       // ignore
     }
 
-    // Chacoalhão no resto do corpo — puxa peito/quadril/membros livres
-    // num sentido aleatório, então o esqueleto inteiro reage junto (não
-    // só a parte presa), com força e direção diferentes a cada morte.
-    // Também tetado pelo mesmo motivo do convulsion acima.
     const flailAngle = Math.random() * Math.PI * 2;
-    const flailMag = (6 + Math.random() * 10) * Math.min(impact, 1.4);
+    const flailMag =
+      (4 + Math.random() * (isCeiling ? 6 : 10)) * Math.min(impact, 1.3);
     const flailX = Math.cos(flailAngle) * flailMag;
-    const flailY = Math.sin(flailAngle) * flailMag * 0.6 - 4 * Math.min(impact, 1.4);
-    const MAX_SPEED = 340; // px/s — teto de velocidade linear pós-impulso
+    const flailY =
+      Math.sin(flailAngle) * flailMag * 0.55 - 3 * Math.min(impact, 1.3);
+    const MAX_SPEED = isCeiling ? 220 : 340;
     for (const part of [chest, hip, lShoulder, rShoulder]) {
       if (part && part !== attachBody) {
         impulse(
           part,
-          flailX * (0.5 + Math.random() * 0.7),
-          flailY * (0.5 + Math.random() * 0.7)
+          flailX * (0.45 + Math.random() * 0.55),
+          flailY * (0.45 + Math.random() * 0.55)
         );
         const pv = part.getLinearVelocity();
         const pspeed = Math.hypot(pv.x, pv.y);
@@ -1189,44 +1121,23 @@ export function stepRagdoll(ragdoll, dtNorm = 1, moveSpeed = 0) {
       ragdoll.spikeTipX = bestTip.x;
       ragdoll.spikeTipY = bestTip.y;
 
-      // Ainda preso numa mola (não travou rígido na criação porque
-      // estava longe): assim que o corpo finalmente chega perto o
-      // bastante, troca pro pino rígido — sem isso, num espeto de
-      // teto, a gravidade fica puxando pra baixo pra sempre contra
-      // uma mola macia, e o corpo nunca fecha o gap (fica boiando
-      // sem tocar de vez, mesmo perto da ponta).
-      if (ragdoll.pinKind !== "rigid" && ragdoll.attachBody) {
-        const ap2 = ragdoll.attachBody.getPosition();
-        const dTip2 = Math.hypot(ap2.x - bestTip.x, ap2.y - bestTip.y);
-        if (dTip2 < NEAR_TIP) {
-          rigidPinAt(
-            ragdoll.world,
-            ragdoll,
-            ragdoll.attachBody,
-            embX,
-            embY,
-            side,
-            ragdoll.bodyPart,
-            depth
-          );
-        }
-      }
-
-      if (ragdoll.pinKind !== "rigid") {
+      // Pin rígido: só acompanha o tip se o mapa ainda rolar (speed>0).
+      // Movimento suavizado — nunca salta o pin (transmitiria teleporte).
+      if (ragdoll.pinKind === "rigid" && ragdoll.pinBody) {
         try {
           const cur = ragdoll.pinBody.getPosition();
-          // Suaviza — nunca move o pin mais que alguns px por frame,
-          // mesmo que o alvo calculado tenha saltado.
-          const maxStep = 6;
+          const maxStep = 4;
           let dx = embX - cur.x;
           let dy = embY - cur.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > maxStep) {
-            const k = maxStep / dist;
-            dx *= k;
-            dy *= k;
+          if (dist > 0.05) {
+            if (dist > maxStep) {
+              const k = maxStep / dist;
+              dx *= k;
+              dy *= k;
+            }
+            ragdoll.pinBody.setTransform(Vec2(cur.x + dx, cur.y + dy), 0);
           }
-          ragdoll.pinBody.setTransform(Vec2(cur.x + dx, cur.y + dy), 0);
         } catch (_) {}
       }
     }
