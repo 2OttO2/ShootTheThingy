@@ -1,6 +1,12 @@
 /**
  * Render do ragdoll com "sprites" SVG por membro (estilo Happy Wheels light).
  * Cada segmento é um SVG rotacionado entre dois joints.
+ *
+ * Amputação por tiro: só coto no tronco — a peça voadora é
+ * `detachedLimbs` no Player (não redesenhar o membro colado no corpo).
+ *
+ * Amputação física na morte (spike): se knee/foot estão LONGE do hip,
+ * desenha a peça solta na pose (está no spike / caindo).
  */
 import { angleBetween, dist } from "../../utils/ragdoll.js";
 import styles from "./Player.module.css";
@@ -70,22 +76,60 @@ function HeadSprite() {
   );
 }
 
+/** Coto no tronco (marca de amputação). */
+function Stump({ at, angleDeg = 90, z = 4 }) {
+  if (!at) return null;
+  return (
+    <div
+      className={styles.rdSeg}
+      style={{
+        left: at.x,
+        top: at.y,
+        width: 10,
+        transform: `rotate(${angleDeg}deg)`,
+        zIndex: z,
+      }}
+    >
+      <div
+        className={styles.rdSegInner}
+        style={{
+          width: 10,
+          height: 8,
+          borderRadius: 3,
+          background: "#c0392b",
+          border: "1.5px solid #333",
+        }}
+      />
+    </div>
+  );
+}
+
 /**
  * @param {{ pose: object }} props
  */
 export default function RagdollSprites({ pose: p }) {
   if (!p) return null;
 
+  const sev = p.severed || {};
   const torsoH = Math.min(28, Math.max(18, dist(p.chest, p.hip)));
   const mx = (p.chest.x + p.hip.x) / 2;
   const my = (p.chest.y + p.hip.y) / 2;
   const torsoAngle = angleBetween(p.chest, p.hip);
 
+  // Peça física solta (morte/spike): joint longe do tronco
+  const looseLegL =
+    sev.legLeft && p.lKnee && p.lFoot && dist(p.hip, p.lKnee) > 36;
+  const looseLegR =
+    sev.legRight && p.rKnee && p.rFoot && dist(p.hip, p.rKnee) > 36;
+  const looseArmL =
+    sev.armLeft && p.lHand && p.lShoulder && dist(p.chest, p.lHand) > 48;
+  const looseArmR =
+    sev.armRight && p.rHand && p.rShoulder && dist(p.chest, p.rHand) > 48;
+
   return (
     <div className={styles.ragdollLayer}>
-      {/* pernas: intactas ligadas ao quadril; amputadas ainda desenham
-          knee→foot na posição física (ficam no spike em vez de sumir) */}
-      {!p.severed?.legLeft ? (
+      {/* Pernas */}
+      {!sev.legLeft ? (
         <>
           <Segment a={p.hip} b={p.lKnee} maxLen={24} z={1}>
             <LegSprite />
@@ -95,11 +139,16 @@ export default function RagdollSprites({ pose: p }) {
           </Segment>
         </>
       ) : (
-        <Segment a={p.lKnee} b={p.lFoot} maxLen={28} z={5}>
-          <LegSprite />
-        </Segment>
+        <>
+          <Stump at={p.hip} angleDeg={100} z={4} />
+          {looseLegL && (
+            <Segment a={p.lKnee} b={p.lFoot} maxLen={30} z={5}>
+              <LegSprite />
+            </Segment>
+          )}
+        </>
       )}
-      {!p.severed?.legRight ? (
+      {!sev.legRight ? (
         <>
           <Segment a={p.hip} b={p.rKnee} maxLen={24} z={1}>
             <LegSprite />
@@ -109,32 +158,57 @@ export default function RagdollSprites({ pose: p }) {
           </Segment>
         </>
       ) : (
-        <Segment a={p.rKnee} b={p.rFoot} maxLen={28} z={5}>
-          <LegSprite />
-        </Segment>
+        <>
+          <Stump at={p.hip} angleDeg={80} z={4} />
+          {looseLegR && (
+            <Segment a={p.rKnee} b={p.rFoot} maxLen={30} z={5}>
+              <LegSprite />
+            </Segment>
+          )}
+        </>
       )}
 
-      {/* braços: amputados continuam visíveis shoulder→hand soltos */}
-      {!p.severed?.armLeft ? (
+      {/* Braços */}
+      {!sev.armLeft ? (
         <Segment a={p.lShoulder} b={p.lHand} maxLen={26} z={2}>
           <ArmSprite />
         </Segment>
       ) : (
-        <Segment a={p.lShoulder} b={p.lHand} maxLen={28} z={5}>
-          <ArmSprite />
-        </Segment>
+        <>
+          <Stump at={p.lShoulder} angleDeg={90} z={4} />
+          {looseArmL && (
+            <Segment
+              a={p.lHand}
+              b={{ x: p.lHand.x + 16, y: p.lHand.y + 8 }}
+              maxLen={22}
+              z={5}
+            >
+              <ArmSprite />
+            </Segment>
+          )}
+        </>
       )}
-      {!p.severed?.armRight ? (
+      {!sev.armRight ? (
         <Segment a={p.rShoulder} b={p.rHand} maxLen={26} z={2}>
           <ArmSprite />
         </Segment>
       ) : (
-        <Segment a={p.rShoulder} b={p.rHand} maxLen={28} z={5}>
-          <ArmSprite />
-        </Segment>
+        <>
+          <Stump at={p.rShoulder} angleDeg={90} z={4} />
+          {looseArmR && (
+            <Segment
+              a={p.rHand}
+              b={{ x: p.rHand.x - 16, y: p.rHand.y + 8 }}
+              maxLen={22}
+              z={5}
+            >
+              <ArmSprite />
+            </Segment>
+          )}
+        </>
       )}
 
-      {/* torso block centered */}
+      {/* torso */}
       <div
         className={styles.rdSeg}
         style={{
@@ -154,7 +228,6 @@ export default function RagdollSprites({ pose: p }) {
         <NeckSprite />
       </Segment>
 
-      {/* head */}
       <div
         style={{
           position: "absolute",
@@ -169,4 +242,3 @@ export default function RagdollSprites({ pose: p }) {
     </div>
   );
 }
-

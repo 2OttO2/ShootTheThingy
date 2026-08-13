@@ -665,6 +665,8 @@ export function createRagdoll(x, y, opts = {}) {
     name: "rShoulder",
   });
 
+  // Membros já amputados no vivo NÃO renascem no tronco (evita teleporte).
+  // A peça voadora continua em detachedLimbs no Player.
   let lHand = null;
   let rHand = null;
   let lKnee = null;
@@ -673,10 +675,16 @@ export function createRagdoll(x, y, opts = {}) {
   let rFoot = null;
 
   if (!sev.armLeft) {
-    lHand = box(world, hx - 22, hy + headR + 22, 4, 10, 0.4, { kind: "part", name: "lHand" });
+    lHand = box(world, hx - 22, hy + headR + 22, 4, 10, 0.4, {
+      kind: "part",
+      name: "lHand",
+    });
   }
   if (!sev.armRight) {
-    rHand = box(world, hx + 22, hy + headR + 22, 4, 10, 0.4, { kind: "part", name: "rHand" });
+    rHand = box(world, hx + 22, hy + headR + 22, 4, 10, 0.4, {
+      kind: "part",
+      name: "rHand",
+    });
   }
   if (!sev.legLeft) {
     lKnee = box(world, hx - 10, hip.getPosition().y + 16, 5, 9, 0.55, {
@@ -707,11 +715,11 @@ export function createRagdoll(x, y, opts = {}) {
   if (rHand) rev(world, rShoulder, rHand, Vec2(0, 4), Vec2(0, -9), [-0.6, 2.4]);
   if (lKnee) {
     rev(world, hip, lKnee, Vec2(-6, hipHY - 1), Vec2(0, -8), [-0.15, 2.1]);
-    rev(world, lKnee, lFoot, Vec2(0, 8), Vec2(0, -7), [-0.1, 2.3]);
+    if (lFoot) rev(world, lKnee, lFoot, Vec2(0, 8), Vec2(0, -7), [-0.1, 2.3]);
   }
   if (rKnee) {
     rev(world, hip, rKnee, Vec2(6, hipHY - 1), Vec2(0, -8), [-2.1, 0.15]);
-    rev(world, rKnee, rFoot, Vec2(0, 8), Vec2(0, -7), [-2.3, 0.1]);
+    if (rFoot) rev(world, rKnee, rFoot, Vec2(0, 8), Vec2(0, -7), [-2.3, 0.1]);
   }
 
   let pinJoint = null;

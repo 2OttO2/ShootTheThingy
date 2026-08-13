@@ -60,11 +60,11 @@ export function createLivingRagdoll(x, y, severed = {}) {
 
   chest.pin = true;
 
-  const points = [head, chest, hip, lShoulder, rShoulder];
-  if (!sev.armLeft) points.push(lHand);
-  if (!sev.armRight) points.push(rHand);
-  if (!sev.legLeft) points.push(lKnee, lFoot);
-  if (!sev.legRight) points.push(rKnee, rFoot);
+  // Pontos dos membros SEMPRE existem — amputado vira peça solta, não some
+  const points = [
+    head, chest, hip, lShoulder, rShoulder,
+    lHand, rHand, lKnee, rKnee, lFoot, rFoot,
+  ];
 
   const sticks = [
     stick(head, chest, 17, 0.72),
@@ -73,14 +73,21 @@ export function createLivingRagdoll(x, y, severed = {}) {
     stick(chest, rShoulder, 12, 0.55),
     stick(lShoulder, rShoulder, 24, 0.35),
   ];
+  // Braços intactos no ombro; amputados: mão livre (sem stick) — sprite
+  // desenha a peça solta na posição da mão
   if (!sev.armLeft) sticks.push(stick(lShoulder, lHand, 20, 0.4));
   if (!sev.armRight) sticks.push(stick(rShoulder, rHand, 20, 0.4));
+  // Pernas: amputadas = só knee-foot (sem hip)
   if (!sev.legLeft) {
     sticks.push(stick(hip, lKnee, 15, 0.48));
+    sticks.push(stick(lKnee, lFoot, 15, 0.42));
+  } else {
     sticks.push(stick(lKnee, lFoot, 15, 0.42));
   }
   if (!sev.legRight) {
     sticks.push(stick(hip, rKnee, 15, 0.48));
+    sticks.push(stick(rKnee, rFoot, 15, 0.42));
+  } else {
     sticks.push(stick(rKnee, rFoot, 15, 0.42));
   }
 
@@ -277,6 +284,8 @@ export function stepLivingRagdoll(
     p.y += vy;
   }
 
+  // Membros amputados NÃO são teleportados de volta à pose — só caem
+  // com a integração acima (já rodou). Intactos recebem place suave.
   for (const name of ["lHand", "rHand", "lKnee", "rKnee", "lFoot", "rFoot"]) {
     const p = parts[name];
     if (!p) continue;
@@ -290,24 +299,48 @@ export function stepLivingRagdoll(
   for (let i = 0; i < 4; i++) {
     for (const s of body.sticks) {
       const sev = body.severed;
-      if (sev.armLeft && (s.a === parts.lHand || s.b === parts.lHand)) continue;
-      if (sev.armRight && (s.a === parts.rHand || s.b === parts.rHand)) continue;
+      // Amputado: ainda aplica stick interno da peça (knee-foot / shoulder-hand)
+      // mas não o que liga ao tronco (hip-knee / chest-shoulder já não existem)
+      if (sev.armLeft && (s.a === parts.lHand || s.b === parts.lHand)) {
+        // só shoulder-hand
+        if (s.a === parts.lShoulder || s.b === parts.lShoulder) constrain(s);
+        continue;
+      }
+      if (sev.armRight && (s.a === parts.rHand || s.b === parts.rHand)) {
+        if (s.a === parts.rShoulder || s.b === parts.rShoulder) constrain(s);
+        continue;
+      }
       if (
         sev.legLeft &&
         (s.a === parts.lKnee ||
           s.b === parts.lKnee ||
           s.a === parts.lFoot ||
           s.b === parts.lFoot)
-      )
+      ) {
+        // só knee-foot
+        if (
+          (s.a === parts.lKnee && s.b === parts.lFoot) ||
+          (s.a === parts.lFoot && s.b === parts.lKnee)
+        ) {
+          constrain(s);
+        }
         continue;
+      }
       if (
         sev.legRight &&
         (s.a === parts.rKnee ||
           s.b === parts.rKnee ||
           s.a === parts.rFoot ||
           s.b === parts.rFoot)
-      )
+      ) {
+        if (
+          (s.a === parts.rKnee && s.b === parts.rFoot) ||
+          (s.a === parts.rFoot && s.b === parts.rKnee)
+        ) {
+          constrain(s);
+        }
         continue;
+      }
       constrain(s);
     }
     if (controlled) place("chest", true);
