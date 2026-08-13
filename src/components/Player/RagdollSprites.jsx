@@ -83,8 +83,9 @@ export default function RagdollSprites({ pose: p }) {
 
   return (
     <div className={styles.ragdollLayer}>
-      {/* legs back */}
-      {!p.severed?.legLeft && (
+      {/* pernas: intactas ligadas ao quadril; amputadas ainda desenham
+          knee→foot na posição física (ficam no spike em vez de sumir) */}
+      {!p.severed?.legLeft ? (
         <>
           <Segment a={p.hip} b={p.lKnee} maxLen={24} z={1}>
             <LegSprite />
@@ -93,8 +94,12 @@ export default function RagdollSprites({ pose: p }) {
             <LegSprite />
           </Segment>
         </>
+      ) : (
+        <Segment a={p.lKnee} b={p.lFoot} maxLen={28} z={5}>
+          <LegSprite />
+        </Segment>
       )}
-      {!p.severed?.legRight && (
+      {!p.severed?.legRight ? (
         <>
           <Segment a={p.hip} b={p.rKnee} maxLen={24} z={1}>
             <LegSprite />
@@ -103,16 +108,28 @@ export default function RagdollSprites({ pose: p }) {
             <LegSprite />
           </Segment>
         </>
+      ) : (
+        <Segment a={p.rKnee} b={p.rFoot} maxLen={28} z={5}>
+          <LegSprite />
+        </Segment>
       )}
 
-      {/* arms */}
-      {!p.severed?.armLeft && (
+      {/* braços: amputados continuam visíveis shoulder→hand soltos */}
+      {!p.severed?.armLeft ? (
         <Segment a={p.lShoulder} b={p.lHand} maxLen={26} z={2}>
           <ArmSprite />
         </Segment>
+      ) : (
+        <Segment a={p.lShoulder} b={p.lHand} maxLen={28} z={5}>
+          <ArmSprite />
+        </Segment>
       )}
-      {!p.severed?.armRight && (
+      {!p.severed?.armRight ? (
         <Segment a={p.rShoulder} b={p.rHand} maxLen={26} z={2}>
+          <ArmSprite />
+        </Segment>
+      ) : (
+        <Segment a={p.rShoulder} b={p.rHand} maxLen={28} z={5}>
           <ArmSprite />
         </Segment>
       )}

@@ -398,22 +398,44 @@ function severLimbOnImpale(ragdoll, partName) {
     mark("legRight");
     return partName === "rFoot" && b.rFoot ? b.rFoot : b.rKnee;
   }
-  // braços
+  // braços: solta do peito, mantém cadeia shoulder↔hand
   if (partName === "lHand" || partName === "lShoulder") {
+    if (b.lShoulder) destroyBodyJoints(world, b.lShoulder);
     if (b.lHand) destroyBodyJoints(world, b.lHand);
-    if (b.lShoulder) {
-      // só remove joint shoulder–chest / shoulder–hand
-      destroyBodyJoints(world, b.lShoulder);
-      // re-liga shoulder ao chest? não — membro solto
+    if (b.lShoulder && b.lHand) {
+      try {
+        world.createJoint(
+          RevoluteJoint({
+            bodyA: b.lShoulder,
+            bodyB: b.lHand,
+            localAnchorA: Vec2(0, 5),
+            localAnchorB: Vec2(0, -9),
+            collideConnected: false,
+          })
+        );
+      } catch (_) {}
     }
     mark("armLeft");
-    return b.lHand || b.lShoulder;
+    return partName === "lHand" && b.lHand ? b.lHand : b.lShoulder || b.lHand;
   }
   if (partName === "rHand" || partName === "rShoulder") {
-    if (b.rHand) destroyBodyJoints(world, b.rHand);
     if (b.rShoulder) destroyBodyJoints(world, b.rShoulder);
+    if (b.rHand) destroyBodyJoints(world, b.rHand);
+    if (b.rShoulder && b.rHand) {
+      try {
+        world.createJoint(
+          RevoluteJoint({
+            bodyA: b.rShoulder,
+            bodyB: b.rHand,
+            localAnchorA: Vec2(0, 5),
+            localAnchorB: Vec2(0, -9),
+            collideConnected: false,
+          })
+        );
+      } catch (_) {}
+    }
     mark("armRight");
-    return b.rHand || b.rShoulder;
+    return partName === "rHand" && b.rHand ? b.rHand : b.rShoulder || b.rHand;
   }
   return null;
 }
@@ -509,53 +531,48 @@ function setupContacts(ragdoll) {
             );
           }
 
-          const pinY =
-            tip.y + (spike.side === "bottom" ? 10 : -8);
+          // Ancora rígida na ponta — membro amputado fica VISÍVEL no espeto
+          const embed =
+            spike.side === "bottom" ? 10 : -10;
+          const pinX = tip.x;
+          const pinY = tip.y + embed;
+          // coloca o membro na ponta (só ele, já separado do tronco)
+          const ap = pinTarget.getPosition();
+          pinTarget.setTransform(Vec2(pinX, pinY), pinTarget.getAngle());
+          pinTarget.setLinearVelocity(Vec2(0, 0));
+          pinTarget.setAngularVelocity(0);
+
           const pin = world.createBody({
             type: "static",
-            position: Vec2(tip.x, pinY),
+            position: Vec2(pinX, pinY),
           });
-          const ap = pinTarget.getPosition();
-          const len = Math.max(
-            6,
-            Math.min(22, Math.hypot(ap.x - tip.x, ap.y - pinY))
-          );
-          // membro amputado fica preso; corpo segue a física livre
           ragdoll.pinJoint = world.createJoint(
-            DistanceJoint({
+            RevoluteJoint({
               bodyA: pin,
               bodyB: pinTarget,
               localAnchorA: Vec2(0, 0),
               localAnchorB: Vec2(0, 0),
-              length: len,
-              frequencyHz: isTorso ? 5 : 8,
-              dampingRatio: 0.75,
               collideConnected: false,
             })
           );
           ragdoll.pinBody = pin;
           ragdoll.attachBody = pinTarget;
-          ragdoll.breakForce = isTorso ? 260 + speed : 9999; // membro fica no spike
-          ragdoll.hangReleased = isTorso ? false : true; // membro: não "hang" do corpo
+          // membro amputado NÃO solta; tronco pode soltar com mais força
+          ragdoll.breakForce = isTorso ? 400 + speed : 9999;
+          ragdoll.hangReleased = false; // pin ativo — acompanha o tip
           ragdoll.hangTimer = 0;
           ragdoll.secondaryImpale = true;
           ragdoll.deathType = isLeg || isArm
             ? DeathType.IMPALE_LEG
             : DeathType.IMPALE;
-          // Sincroniza os dados que o acompanhamento por frame usa —
-          // sem isso ele continuava buscando o LADO/MEMBRO do impale
-          // PRIMÁRIO (ex.: "bottom"/"chest"), que pode ser totalmente
-          // diferente deste engate novo (ex.: agora é um espeto de
-          // "top"). Com o lado errado, a busca por obstáculo nunca
-          // encontra a ponta certa, o pino fica estático parado no ar
-          // enquanto o mundo continua rolando — e parece um teleporte.
           ragdoll.bodyPart = part.name;
           ragdoll.pinFollowSide = spike.side;
           ragdoll.pinFollowTipX = tip.x;
           ragdoll.pinFollowTipY = tip.y;
           ragdoll.spikeTipX = tip.x;
           ragdoll.spikeTipY = tip.y;
-          ragdoll.pinKind = "spring";
+          ragdoll.pinKind = "rigid";
+          ragdoll.pinEmbedDepth = Math.abs(embed);
           if (typeof ragdoll.onBlood === "function") {
             ragdoll.onBlood({
               x: tip.x,
