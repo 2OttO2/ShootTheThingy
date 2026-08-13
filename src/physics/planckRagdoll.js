@@ -573,6 +573,16 @@ function setupContacts(ragdoll) {
           ragdoll.spikeTipY = tip.y;
           ragdoll.pinKind = "rigid";
           ragdoll.pinEmbedDepth = Math.abs(embed);
+          // membro amputado preso no spike — flag pro render sempre desenhar
+          if (isLeg || isArm) {
+            ragdoll.spikeStuck = {
+              part: part.name,
+              legLeft: part.name === "lFoot" || part.name === "lKnee",
+              legRight: part.name === "rFoot" || part.name === "rKnee",
+              armLeft: part.name === "lHand" || part.name === "lShoulder",
+              armRight: part.name === "rHand" || part.name === "rShoulder",
+            };
+          }
           if (typeof ragdoll.onBlood === "function") {
             ragdoll.onBlood({
               x: tip.x,
@@ -729,6 +739,7 @@ export function createRagdoll(x, y, opts = {}) {
   let attachBody = null;
   let breakForce = 0;
   let pinIsRigid = false;
+  let spikeStuck = null;
 
   /**
    * PIN OBRIGATÓRIO em qualquer morte com tip válido (exceto stall).
@@ -983,6 +994,49 @@ export function createRagdoll(x, y, opts = {}) {
     pinIsRigid = true;
     hangReleased = false;
 
+    // Extremidade empalada: separa do tronco e fica no espeto
+    // (o resto do corpo cai; o membro continua pinado + visível).
+    if (extremity) {
+      const detached = severLimbOnImpale(
+        {
+          world,
+          bodies: {
+            head, chest, hip, lShoulder, rShoulder,
+            lHand, rHand, lKnee, rKnee, lFoot, rFoot,
+          },
+          severed: sev,
+        },
+        bodyPart
+      );
+      if (detached) {
+        attachBody = detached;
+        // garante pin no body amputado (joint antigo pode ter sido limpo)
+        try {
+          if (pinJoint) world.destroyJoint(pinJoint);
+        } catch (_e) {}
+        pinJoint = world.createJoint(
+          RevoluteJoint({
+            bodyA: pinBody,
+            bodyB: attachBody,
+            localAnchorA: Vec2(0, 0),
+            localAnchorB: Vec2(0, 0),
+            collideConnected: false,
+          })
+        );
+        const ap2 = attachBody.getPosition();
+        // puxa só o membro pro tip (não o tronco)
+        attachBody.setTransform(Vec2(pinX, pinY), attachBody.getAngle());
+        attachBody.setLinearVelocity(Vec2(0, 0));
+      }
+      spikeStuck = {
+        part: bodyPart,
+        legLeft: bodyPart === "lFoot" || bodyPart === "lKnee",
+        legRight: bodyPart === "rFoot" || bodyPart === "rKnee",
+        armLeft: bodyPart === "lHand" || bodyPart === "lShoulder",
+        armRight: bodyPart === "rHand" || bodyPart === "rShoulder",
+      };
+    }
+
     attachBody.setAngularDamping(isCeiling ? 0.45 : 0.55);
     attachBody.setLinearDamping(isCeiling ? 0.1 : 0.12);
 
@@ -1151,6 +1205,7 @@ export function createRagdoll(x, y, opts = {}) {
     pinFollowTipX: tipX,
     pinSpikeIndex: pinSpikeIndex,
     severed: sev,
+    spikeStuck,
     onBlood: opts.onBlood || null,
     spikeBodies: initialSpikeBodies,
     obstacles: opts.obstacles ?? [],
@@ -1397,6 +1452,7 @@ export function ragdollSnapshot(ragdoll) {
     lFoot: b.lFoot ? pos(b.lFoot) : { x: hip.x - 10, y: hip.y + 28 },
     rFoot: b.rFoot ? pos(b.rFoot) : { x: hip.x + 10, y: hip.y + 28 },
     severed: { ...sev },
+    spikeStuck: ragdoll.spikeStuck ? { ...ragdoll.spikeStuck } : null,
     deathType: ragdoll.deathType,
   };
 }

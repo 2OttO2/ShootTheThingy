@@ -111,20 +111,21 @@ export default function RagdollSprites({ pose: p }) {
   if (!p) return null;
 
   const sev = p.severed || {};
+  const stuck = p.spikeStuck || {};
   const torsoH = Math.min(28, Math.max(18, dist(p.chest, p.hip)));
   const mx = (p.chest.x + p.hip.x) / 2;
   const my = (p.chest.y + p.hip.y) / 2;
   const torsoAngle = angleBetween(p.chest, p.hip);
 
-  // Peça física solta (morte/spike): joint longe do tronco
+  // Peça no spike: flag explícita OU joint longe do tronco
   const looseLegL =
-    sev.legLeft && p.lKnee && p.lFoot && dist(p.hip, p.lKnee) > 36;
+    (stuck.legLeft || (sev.legLeft && p.lKnee && p.lFoot && dist(p.hip, p.lKnee) > 36));
   const looseLegR =
-    sev.legRight && p.rKnee && p.rFoot && dist(p.hip, p.rKnee) > 36;
+    (stuck.legRight || (sev.legRight && p.rKnee && p.rFoot && dist(p.hip, p.rKnee) > 36));
   const looseArmL =
-    sev.armLeft && p.lHand && p.lShoulder && dist(p.chest, p.lHand) > 48;
+    (stuck.armLeft || (sev.armLeft && p.lHand && dist(p.chest, p.lHand) > 48));
   const looseArmR =
-    sev.armRight && p.rHand && p.rShoulder && dist(p.chest, p.rHand) > 48;
+    (stuck.armRight || (sev.armRight && p.rHand && dist(p.chest, p.rHand) > 48));
 
   return (
     <div className={styles.ragdollLayer}>
