@@ -472,11 +472,17 @@ function setupContacts(ragdoll) {
     }
 
     // contato com spike APÓS a morte (ex: caiu do teto no de baixo)
-    // — reage mesmo sem ser "impale primário"
+    const spikeSideHit = spike.side || null;
+    const primarySide = ragdoll.pinFollowSide || ragdoll.spikeSide || null;
+    const oppositeSide =
+      !!spikeSideHit && !!primarySide && spikeSideHit !== primarySide;
+    // permite engate no lado oposto mesmo ainda pendurado no teto
+    // (antes exigia hangReleased e secondaryImpale já vinha true no
+    // impale primário — por isso nunca cravava nos de baixo).
     const canSecondary =
       !ragdoll.secondaryImpale &&
-      ragdoll.hangReleased !== false &&
-      speed > 55;
+      speed > 45 &&
+      (ragdoll.hangReleased || oppositeSide || !ragdoll.pinJoint);
 
     if (canSecondary) {
       const tip = spike.tip || p;
@@ -512,6 +518,11 @@ function setupContacts(ragdoll) {
             world.destroyJoint(ragdoll.pinJoint);
             ragdoll.pinJoint = null;
           }
+          ragdoll.hangReleased = true;
+          // libera colisão do pin antigo pra não herdar mask errada
+          enableSpikeCollisionMany(
+            Object.values(ragdoll.bodies || {}).filter(Boolean)
+          );
 
           let pinTarget = partBody;
 
@@ -944,21 +955,10 @@ export function createRagdoll(x, y, opts = {}) {
   }
 
   if (attachBody) {
-    // Desliga colisão com espetos no corpo inteiro (vizinhos no teto
-    // geravam correções que pareciam teleporte).
-    disableSpikeCollisionMany([
-      head,
-      chest,
-      hip,
-      lShoulder,
-      rShoulder,
-      lHand,
-      rHand,
-      lKnee,
-      rKnee,
-      lFoot,
-      rFoot,
-    ]);
+    // Desliga colisão só do membro pinado (evita tremor no tip).
+    // O RESTO do corpo continua colidindo — essencial pra, caindo do
+    // teto, poder cravar nos spikes de baixo.
+    disableSpikeCollision(attachBody);
 
     const emb = embedPoint(tipX, tipY, spikeSide);
     const pinX = emb.x;
@@ -1188,7 +1188,7 @@ export function createRagdoll(x, y, opts = {}) {
     bodyPart,
     pinKind: pinIsRigid ? "rigid" : "spring",
     floorKicked: false,
-    secondaryImpale: deathType === DeathType.IMPALE || deathType === DeathType.IMPALE_LEG,
+    secondaryImpale: false, // só true depois de engate secundário real
     floorY,
     pinJoint,
     pinBody,
